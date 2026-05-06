@@ -1,3 +1,4 @@
+// FILE SIZE EXCEPTION: DO proxy service — splitting creates import complexity without meaningful benefit. See .claude/rules/18-file-size-limits.md
 /**
  * Service layer for interacting with the per-project Durable Object.
  *
@@ -153,10 +154,21 @@ export async function getMessages(
   sessionId: string,
   limit: number = 100,
   before: number | null = null,
-  roles?: string[]
+  roles?: string[],
+  compact: boolean = false
 ): Promise<{ messages: Record<string, unknown>[]; hasMore: boolean }> {
   const stub = await getStub(env, projectId);
-  return stub.getMessages(sessionId, limit, before, roles);
+  return stub.getMessages(sessionId, limit, before, roles, compact);
+}
+
+export async function getMessageToolContent(
+  env: Env,
+  projectId: string,
+  sessionId: string,
+  messageId: string
+): Promise<unknown[] | null> {
+  const stub = await getStub(env, projectId);
+  return stub.getMessageToolContent(sessionId, messageId);
 }
 
 /** Get total message count for a session, optionally filtered by roles. */
