@@ -30,7 +30,7 @@ curl -s -H "Authorization: Bearer $CF_TOKEN" \
 | `*.sammy.party` | CNAME | `sam-api-staging.workers.dev` |
 | `<node-id>.vm.sammy.party` | A | `46.225.80.xxx` (1 active node) |
 
-Total DNS records in zone `sammy.party`: **4**
+User-managed DNS records in zone `sammy.party`: **4** (excludes NS/SOA system records)
 
 ### Cron Triggers (from `wrangler.toml`)
 
@@ -131,7 +131,7 @@ Last 5 migrations applied:
 | `name` | TEXT | Yes | — |
 | `normalized_name` | TEXT | Yes | — |
 | `description` | TEXT | No | — |
-| `installation_id` | TEXT | No | — |
+| `installation_id` | TEXT | No* | — |
 | `repository` | TEXT | Yes | — |
 | `default_branch` | TEXT | Yes | `'main'` |
 | `github_repo_id` | INTEGER | No | — |
@@ -161,6 +161,10 @@ Last 5 migrations applied:
 | `updated_at` | TEXT | Yes | `CURRENT_TIMESTAMP` |
 | `repo_provider` | TEXT | Yes | `'github'` |
 | `artifacts_repo_id` | TEXT | No | — |
+
+\* `installation_id` reports as nullable from `PRAGMA table_info()` on the live DB, but `schema.ts` declares it `.notNull()` with a FK to `github_installations`. Migration 0047 explicitly preserves NOT NULL. The discrepancy is a SQLite DDL reflection artifact — treat this column as NOT NULL for compatibility planning.
+
+**Note**: Column order reflects `PRAGMA table_info()` output. `repo_provider` and `artifacts_repo_id` appear last because they were added via `ALTER TABLE ADD COLUMN` (migration 0047), not in the original `CREATE TABLE`.
 </details>
 
 ### 2b. Observability Database (`sam-observability-staging`)
@@ -203,7 +207,7 @@ From `apps/api/wrangler.toml` (checked into repo). These are top-level bindings;
 | `PROJECT_AGENT` | `ProjectAgent` | v12 | SQLite |
 | `SANDBOX` | `SandboxDO` | v13 | SQLite (Container) |
 
-**Note**: DO internal SQLite migrations (per-instance) are managed within each DO class, not via D1. ProjectData has the most complex internal schema (19+ migrations as of spec 027).
+**Note**: DO internal SQLite migrations (per-instance) are managed within each DO class, not via D1. ProjectData has the most complex internal schema (19 migrations, 001-initial-schema through 019-project-policies).
 
 ### Container Binding
 
