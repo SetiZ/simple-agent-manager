@@ -11,6 +11,7 @@ import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 
 import type { NodeLifecycle } from '../../src/durable-objects/node-lifecycle';
+import { seedNode, seedUser } from './helpers/seed-d1';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,27 +24,11 @@ function getStub(nodeId: string): DurableObjectStub<NodeLifecycle> {
 
 const TEST_USER_ID = 'user-nl-test-001';
 
-/**
- * Seed the D1 `nodes` table with a running node.
- * Also seeds the users table since nodes references users(id).
- */
-async function seedNode(nodeId: string, userId: string = TEST_USER_ID): Promise<void> {
-  // Ensure user exists (idempotent)
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO users (id, github_id, email, name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-  ).bind(userId, `gh-${userId}`, `${userId}@test.com`, 'Test User').run();
-
-  // Insert node
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO nodes (id, user_id, name, status, vm_size, vm_location, health_status, created_at, updated_at)
-     VALUES (?, ?, ?, 'running', 'medium', 'nbg1', 'healthy', datetime('now'), datetime('now'))`,
-  ).bind(nodeId, userId, `node-${nodeId}`).run();
+async function seedTestNode(nodeId: string, userId: string = TEST_USER_ID): Promise<void> {
+  await seedUser(userId);
+  await seedNode(nodeId, userId);
 }
 
-/**
- * Read the node's warm_since and status from D1.
- */
 async function getNodeFromD1(nodeId: string): Promise<{ status: string; warm_since: string | null } | null> {
   return await env.DATABASE.prepare(
     `SELECT status, warm_since FROM nodes WHERE id = ?`,
@@ -59,7 +44,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('markIdle transitions to warm and updates D1 warm_since', async () => {
     const nodeId = 'nl-test-idle-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
     const result = await stub.markIdle(nodeId, TEST_USER_ID);
@@ -76,7 +61,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('markActive transitions to active and clears D1 warm_since', async () => {
     const nodeId = 'nl-test-active-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -97,7 +82,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('tryClaim on warm node succeeds and transitions to active', async () => {
     const nodeId = 'nl-test-claim-warm-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
     await stub.markIdle(nodeId, TEST_USER_ID);
@@ -115,7 +100,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('tryClaim on active node returns false', async () => {
     const nodeId = 'nl-test-claim-active-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -131,7 +116,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('markIdle on destroying node throws conflict error', async () => {
     const nodeId = 'nl-test-destroy-conflict-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -153,7 +138,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('getStatus returns current state', async () => {
     const nodeId = 'nl-test-status-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -170,7 +155,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('markIdle resets alarm when called twice (extending warm period)', async () => {
     const nodeId = 'nl-test-reset-alarm-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -185,7 +170,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('alarm on warm state transitions to destroying and updates D1', async () => {
     const nodeId = 'nl-test-alarm-destroy-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -217,7 +202,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('alarm on active state is a no-op (node was claimed between schedule and fire)', async () => {
     const nodeId = 'nl-test-alarm-active-noop-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -249,7 +234,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
   it('workspace deletion scheduling stores entry and can be cancelled', async () => {
     const nodeId = 'nl-test-ws-delete-001';
     const wsId = 'ws-pending-delete-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
     await stub.markIdle(nodeId, TEST_USER_ID);
@@ -267,7 +252,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('tryClaim on destroying node returns false', async () => {
     const nodeId = 'nl-test-claim-destroying-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
 
@@ -288,7 +273,7 @@ describe('NodeLifecycle DO — warm pool state machine', () => {
 
   it('markIdle with warmTimeoutOverrideMs uses the override', async () => {
     const nodeId = 'nl-test-override-001';
-    await seedNode(nodeId);
+    await seedTestNode(nodeId);
 
     const stub = getStub(nodeId);
     const result = await stub.markIdle(nodeId, TEST_USER_ID, 60_000);

@@ -18,8 +18,8 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 
-import type { TaskRunner } from '../../src/durable-objects/task-runner';
-import type { StartTaskInput, TaskRunnerState } from '../../src/durable-objects/task-runner';
+import type { StartTaskInput, TaskRunner, TaskRunnerState } from '../../src/durable-objects/task-runner';
+import { seedInstallation, seedProject, seedTask, seedUser } from './helpers/seed-d1';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,37 +34,14 @@ const TEST_USER_ID = 'user-tr-test-001';
 const TEST_PROJECT_ID = 'project-tr-test-001';
 const TEST_INSTALLATION_ID = 'install-tr-test-001';
 
-/**
- * Seed the D1 tables with minimal data required for TaskRunner operations.
- */
 async function seedTestData(): Promise<void> {
-  // User
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO users (id, github_id, email, name, created_at, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-  ).bind(TEST_USER_ID, 'gh-tr-test', 'tr-test@test.com', 'Test User').run();
-
-  // GitHub installation (required FK for projects)
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO github_installations (id, user_id, installation_id, account_type, account_name, created_at, updated_at)
-     VALUES (?, ?, ?, 'user', 'test-user', datetime('now'), datetime('now'))`,
-  ).bind(TEST_INSTALLATION_ID, TEST_USER_ID, 'inst-12345').run();
-
-  // Project
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO projects (id, user_id, name, normalized_name, installation_id, repository, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-  ).bind(TEST_PROJECT_ID, TEST_USER_ID, 'Test Project', 'test-project', TEST_INSTALLATION_ID, 'test-org/test-repo', TEST_USER_ID).run();
+  await seedUser(TEST_USER_ID, { githubId: 'gh-tr-test', email: 'tr-test@test.com' });
+  await seedInstallation(TEST_INSTALLATION_ID, TEST_USER_ID);
+  await seedProject(TEST_PROJECT_ID, TEST_USER_ID, TEST_INSTALLATION_ID);
 }
 
-/**
- * Create a task in D1 with 'delegated' status (the state TaskRunner expects).
- */
-async function seedTask(taskId: string): Promise<void> {
-  await env.DATABASE.prepare(
-    `INSERT OR IGNORE INTO tasks (id, project_id, user_id, title, status, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'delegated', ?, datetime('now'), datetime('now'))`,
-  ).bind(taskId, TEST_PROJECT_ID, TEST_USER_ID, `Test task ${taskId}`, TEST_USER_ID).run();
+async function seedTestTask(taskId: string): Promise<void> {
+  await seedTask(taskId, TEST_PROJECT_ID, TEST_USER_ID);
 }
 
 /**
@@ -105,18 +82,12 @@ function buildStartInput(taskId: string): StartTaskInput {
   };
 }
 
-/**
- * Read a task from D1.
- */
 async function getTaskFromD1(taskId: string): Promise<{ status: string; execution_step: string | null; error_message: string | null } | null> {
   return await env.DATABASE.prepare(
     `SELECT status, execution_step, error_message FROM tasks WHERE id = ?`,
   ).bind(taskId).first<{ status: string; execution_step: string | null; error_message: string | null }>();
 }
 
-/**
- * Read task status events from D1.
- */
 async function getStatusEvents(taskId: string): Promise<Array<{ from_status: string | null; to_status: string; reason: string | null }>> {
   const result = await env.DATABASE.prepare(
     `SELECT from_status, to_status, reason FROM task_status_events WHERE task_id = ? ORDER BY created_at ASC`,
@@ -132,7 +103,7 @@ describe('TaskRunner DO — state persistence and idempotency', () => {
   it('start() persists initial state with correct shape', async () => {
     await seedTestData();
     const taskId = 'tr-test-start-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     const input = buildStartInput(taskId);
@@ -161,7 +132,7 @@ describe('TaskRunner DO — state persistence and idempotency', () => {
   it('start() is idempotent — second call is a no-op', async () => {
     await seedTestData();
     const taskId = 'tr-test-idempotent-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     const input = buildStartInput(taskId);
@@ -183,7 +154,7 @@ describe('TaskRunner DO — state persistence and idempotency', () => {
   it('getStatus() redacts mcpToken', async () => {
     await seedTestData();
     const taskId = 'tr-test-redact-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     const input = buildStartInput(taskId);
@@ -213,7 +184,7 @@ describe('TaskRunner DO — advanceWorkspaceReady', () => {
   it('stores the workspace-ready signal in state', async () => {
     await seedTestData();
     const taskId = 'tr-test-ws-ready-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     await stub.start(buildStartInput(taskId));
@@ -230,7 +201,7 @@ describe('TaskRunner DO — advanceWorkspaceReady', () => {
   it('stores error signal when workspace reports error', async () => {
     await seedTestData();
     const taskId = 'tr-test-ws-error-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     await stub.start(buildStartInput(taskId));
@@ -246,7 +217,7 @@ describe('TaskRunner DO — advanceWorkspaceReady', () => {
   it('is a no-op when state is completed', async () => {
     await seedTestData();
     const taskId = 'tr-test-ws-completed-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     await stub.start(buildStartInput(taskId));
@@ -275,7 +246,7 @@ describe('TaskRunner DO — failure handling', () => {
   it('failTask updates D1 task status to failed and records status event', async () => {
     await seedTestData();
     const taskId = 'tr-test-fail-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     await stub.start(buildStartInput(taskId));
@@ -320,7 +291,7 @@ describe('TaskRunner DO — failure handling', () => {
   it('alarm is a no-op on completed state', async () => {
     await seedTestData();
     const taskId = 'tr-test-alarm-noop-001';
-    await seedTask(taskId);
+    await seedTestTask(taskId);
 
     const stub = getStub(taskId);
     await stub.start(buildStartInput(taskId));
