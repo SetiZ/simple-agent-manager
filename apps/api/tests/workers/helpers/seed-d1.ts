@@ -51,7 +51,7 @@ export async function seedProject(
   opts?: { name?: string; repository?: string },
 ): Promise<void> {
   const name = opts?.name ?? 'Test Project';
-  const normalizedName = name.toLowerCase().replace(/\s+/g, '-');
+  const normalizedName = name.toLowerCase().replaceAll(/\s+/g, '-');
   const repository = opts?.repository ?? 'test-org/test-repo';
 
   await env.DATABASE.prepare(
