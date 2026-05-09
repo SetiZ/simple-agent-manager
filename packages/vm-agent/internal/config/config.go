@@ -137,6 +137,11 @@ type Config struct {
 	// Configurable per constitution principle XI.
 	DevcontainerBuildTimeout time.Duration // Max time for a single devcontainer up call (env: DEVCONTAINER_BUILD_TIMEOUT, default: 15m)
 
+	// Devcontainer cache settings — opportunistic image caching via container registry.
+	// Configurable per constitution principle XI.
+	DevcontainerCacheEnabled  bool   // Enable devcontainer image caching (env: DEVCONTAINER_CACHE_ENABLED, default: false)
+	DevcontainerCacheRegistry string // Container registry for cache images (env: DEVCONTAINER_CACHE_REGISTRY, default: ghcr.io)
+
 	// Cloud provider — used for provider-specific optimizations (apt mirrors, etc.)
 	Provider string // Cloud provider name (env: PROVIDER, e.g. "hetzner", "scaleway", "gcp")
 
@@ -333,6 +338,10 @@ func Load() (*Config, error) {
 
 		// Devcontainer build timeout — prevents indefinite hangs on network failures.
 		DevcontainerBuildTimeout: getEnvDuration("DEVCONTAINER_BUILD_TIMEOUT", 15*time.Minute),
+
+		// Devcontainer cache settings — opportunistic image caching.
+		DevcontainerCacheEnabled:  getEnvBool("DEVCONTAINER_CACHE_ENABLED", false),
+		DevcontainerCacheRegistry: getEnv("DEVCONTAINER_CACHE_REGISTRY", "ghcr.io"),
 
 		// Cloud provider (set via cloud-init)
 		Provider: getEnv("PROVIDER", ""),
