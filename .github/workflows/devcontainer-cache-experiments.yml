@@ -29,6 +29,7 @@ jobs:
   cloudflare-registry:
     if: ${{ github.event_name == 'push' || inputs.run_cloudflare_registry == 'true' }}
     runs-on: ubuntu-latest
+    environment: staging
     timeout-minutes: 25
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
@@ -121,6 +122,7 @@ jobs:
   r2-cache:
     if: ${{ github.event_name == 'push' || inputs.run_r2 == 'true' }}
     runs-on: ubuntu-latest
+    environment: staging
     timeout-minutes: 35
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
