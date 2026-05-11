@@ -2,7 +2,7 @@
 
 Date: 2026-05-11
 PR: #963
-Workflow run: `25664066831`
+Workflow runs: `25664066831`, `25672922644`
 
 ## Context
 
@@ -66,6 +66,39 @@ Status: Downloaded newer image for registry.cloudflare.com/<account-id>/sam-devc
 
 This confirms the registry supports the plain Docker push/pull behavior the VM
 agent needs.
+
+## SAM Devcontainer Stress Test
+
+The follow-up stress test built SAM's real `.devcontainer/devcontainer.json`
+image and pushed it through the Cloudflare managed Containers Registry with
+plain Docker commands.
+
+Workflow run: <https://github.com/raphaeltm/simple-agent-manager/actions/runs/25672922644>
+
+The workflow intentionally used `devcontainer build` instead of
+`devcontainer up`. The VM agent cache path stores the built devcontainer image,
+and `devcontainer up` also runs lifecycle hooks that are not required to stress
+registry storage and transfer. An earlier `devcontainer up` run was cancelled
+after hanging in the start/lifecycle phase.
+
+Result:
+
+```text
+SIZE_BYTES=2741386134
+SIZE_MIB=2614.4
+registry.cloudflare.com/<account-id>/sam-devcontainer-cache-stress:sam-real-25672922644:
+  digest: sha256:baeb7e14758e5b4284cd7b9b2faec8e736ed97fd1c37b153614ce06306cfc07e
+  size: 7436
+Status: Downloaded newer image for registry.cloudflare.com/<account-id>/sam-devcontainer-cache-stress:sam-real-25672922644
+```
+
+The local Docker image size was 2,741,386,134 bytes, or 2,614.4 MiB. The full
+job completed in 4 minutes 18 seconds. The devcontainer build took about 2
+minutes 25 seconds, and the push/pull phase took about 85 seconds from push
+start to successful pull.
+
+This confirms the managed registry handled a real SAM devcontainer image, not
+just the earlier synthetic 64 MiB test image.
 
 ## R2 Docker Tarball
 
