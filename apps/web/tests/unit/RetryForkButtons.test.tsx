@@ -439,7 +439,7 @@ describe('SessionItem sidebar fork button (regression)', () => {
   it('does not show fork button for active sessions', () => {
     render(
       <SessionItem
-        session={makeSession({ status: 'active', isIdle: false, endedAt: null })}
+        session={makeSession({ status: 'active', isIdle: false, endedAt: null, task: { id: 'task-1', status: 'in_progress' } })}
         isSelected={false}
         onSelect={vi.fn()}
         onFork={vi.fn()}
@@ -447,5 +447,19 @@ describe('SessionItem sidebar fork button (regression)', () => {
     );
 
     expect(screen.queryByTitle('Continue from this session')).toBeNull();
+  });
+
+  it('shows fork button when session status is active but task is failed (reconciliation)', () => {
+    render(
+      <SessionItem
+        session={makeSession({ status: 'active', endedAt: null, task: { id: 'task-1', status: 'failed', errorMessage: 'crashed' } })}
+        isSelected={false}
+        onSelect={vi.fn()}
+        onFork={vi.fn()}
+      />
+    );
+
+    // Task terminal state makes getSessionState return 'terminated', so fork button should appear
+    expect(screen.getByTitle('Continue from this session')).toBeTruthy();
   });
 });
