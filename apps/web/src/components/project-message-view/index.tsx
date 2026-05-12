@@ -236,7 +236,7 @@ export const ProjectMessageView: FC<ProjectMessageViewProps> = ({
             type="button"
             onClick={lc.handleCancelPrompt}
             aria-label="Cancel agent"
-            className="ml-auto flex-shrink-0 px-2 py-2.5 min-h-[44px] text-xs font-medium rounded border border-border-default bg-transparent cursor-pointer text-danger hover:bg-danger-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="ml-auto flex-shrink-0 px-2 py-2.5 min-h-[44px] text-xs font-medium rounded border border-border-default bg-transparent cursor-pointer text-danger hover:bg-danger-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             Cancel
           </button>
