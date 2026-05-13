@@ -73,6 +73,11 @@ See `apps/api/.env.example` for the full list. Key variables:
 - `MAX_PROJECTS_PER_USER` — Runtime project cap
 - `MAX_TASKS_PER_PROJECT` — Runtime task cap per project
 - `MAX_TASK_DEPENDENCIES_PER_TASK` — Runtime dependency-edge cap per task
+- `AGENT_SETTINGS_VALIDATION_LIMITS` — Optional JSON object overriding
+  agent-settings validation bounds for model IDs, tool lists, additional env
+  entries, provider display names, and OpenCode base URLs. See
+  `apps/api/.env.example` and `docs/guides/self-hosting.md` for supported keys
+  and defaults.
 
 ### Pagination
 

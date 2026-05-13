@@ -73,6 +73,7 @@ These are runtime Worker variables, not GitHub Environment variables in the curr
 | `MAX_PROJECT_RUNTIME_ENV_VALUE_BYTES`      | Max bytes per runtime env var value    | `8192`   |
 | `MAX_PROJECT_RUNTIME_FILE_CONTENT_BYTES`   | Max bytes per runtime file content     | `131072` |
 | `MAX_PROJECT_RUNTIME_FILE_PATH_LENGTH`     | Max runtime file path length (chars)   | `256`    |
+| `AGENT_SETTINGS_VALIDATION_LIMITS`         | JSON object overriding agent-settings validation bounds for model IDs, tool lists, additional env, provider names, and OpenCode base URLs. See `apps/api/.env.example` for supported keys and defaults. | unset |
 
 **Optional AI task title generation variables** (Worker `vars`):
 

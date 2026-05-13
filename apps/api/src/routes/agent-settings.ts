@@ -5,22 +5,149 @@ import type {
 } from '@simple-agent-manager/shared';
 import {
   isValidAgentType,
+  OPENCODE_PROVIDERS,
+  VALID_PERMISSION_MODES,
 } from '@simple-agent-manager/shared';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
+import * as v from 'valibot';
 
 import * as schema from '../db/schema';
 import type { Env } from '../env';
 import { ulid } from '../lib/ulid';
-import { getUserId, requireApproved,requireAuth } from '../middleware/auth';
+import { getUserId, requireApproved, requireAuth } from '../middleware/auth';
 import { errors } from '../middleware/error';
-import { jsonValidator, SaveAgentSettingsSchema } from '../schemas';
+import {
+  AGENT_SETTINGS_VALIDATION_DEFAULTS,
+  type AgentSettingsValidationLimits,
+  createSaveAgentSettingsSchema,
+  formatIssues,
+} from '../schemas';
 
 export const agentSettingsRoutes = new Hono<{ Bindings: Env }>();
+type AgentSettingsBody = v.InferOutput<ReturnType<typeof createSaveAgentSettingsSchema>>;
 
 // All agent settings routes require authentication
 agentSettingsRoutes.use('/*', requireAuth(), requireApproved());
+
+function parseJsonColumn(raw: string | null): unknown {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function stringArrayFromJson(raw: string | null): string[] | null {
+  const parsed = parseJsonColumn(raw);
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+    return null;
+  }
+  return parsed;
+}
+
+function stringRecordFromJson(raw: string | null): Record<string, string> | null {
+  const parsed = parseJsonColumn(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof key !== 'string' || typeof value !== 'string') {
+      return null;
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function isAgentPermissionMode(raw: string | null): raw is AgentPermissionMode {
+  return raw !== null && VALID_PERMISSION_MODES.some((mode) => mode === raw);
+}
+
+function isOpenCodeProvider(raw: string | null): raw is OpenCodeProvider {
+  return raw !== null && Object.prototype.hasOwnProperty.call(OPENCODE_PROVIDERS, raw);
+}
+
+function permissionModeFromDb(raw: string | null): AgentPermissionMode | null {
+  return isAgentPermissionMode(raw) ? raw : null;
+}
+
+function opencodeProviderFromDb(raw: string | null): OpenCodeProvider | null {
+  return isOpenCodeProvider(raw) ? raw : null;
+}
+
+function getAgentSettingsValidationLimits(env: Env): AgentSettingsValidationLimits {
+  if (!env.AGENT_SETTINGS_VALIDATION_LIMITS) {
+    return AGENT_SETTINGS_VALIDATION_DEFAULTS;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(env.AGENT_SETTINGS_VALIDATION_LIMITS) as unknown;
+  } catch {
+    return AGENT_SETTINGS_VALIDATION_DEFAULTS;
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return AGENT_SETTINGS_VALIDATION_DEFAULTS;
+  }
+
+  const limits = { ...AGENT_SETTINGS_VALIDATION_DEFAULTS };
+  const overrides = parsed as Partial<Record<keyof AgentSettingsValidationLimits, unknown>>;
+  const limitKeys = Object.keys(limits) as Array<keyof AgentSettingsValidationLimits>;
+
+  for (const key of limitKeys) {
+    const value = overrides[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      limits[key] = Math.trunc(value);
+    }
+  }
+
+  return limits;
+}
+
+async function parseAgentSettingsBody(
+  c: Context<{ Bindings: Env }>
+): Promise<AgentSettingsBody | Response> {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch (err) {
+    if (err instanceof SyntaxError || (err instanceof Error && err.message.includes('JSON'))) {
+      return c.json(
+        {
+          error: 'BAD_REQUEST',
+          message: 'Invalid JSON in request body',
+        },
+        400
+      );
+    }
+    throw err;
+  }
+
+  const parsed = v.safeParse(
+    createSaveAgentSettingsSchema(getAgentSettingsValidationLimits(c.env)),
+    body
+  );
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: 'BAD_REQUEST',
+        message: formatIssues(parsed.issues),
+      },
+      400
+    );
+  }
+
+  return parsed.output;
+}
 
 /**
  * Convert a DB row to an API response.
@@ -30,11 +157,11 @@ function toResponse(row: schema.AgentSettingsRow): AgentSettingsResponse {
   return {
     agentType: row.agentType,
     model: row.model,
-    permissionMode: row.permissionMode as AgentPermissionMode | null,
-    allowedTools: row.allowedTools ? JSON.parse(row.allowedTools) : null,
-    deniedTools: row.deniedTools ? JSON.parse(row.deniedTools) : null,
-    additionalEnv: row.additionalEnv ? JSON.parse(row.additionalEnv) : null,
-    opencodeProvider: (row.opencodeProvider as OpenCodeProvider) ?? null,
+    permissionMode: permissionModeFromDb(row.permissionMode),
+    allowedTools: stringArrayFromJson(row.allowedTools),
+    deniedTools: stringArrayFromJson(row.deniedTools),
+    additionalEnv: stringRecordFromJson(row.additionalEnv),
+    opencodeProvider: opencodeProviderFromDb(row.opencodeProvider),
     opencodeBaseUrl: row.opencodeBaseUrl ?? null,
     opencodeProviderName: row.opencodeProviderName ?? null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
@@ -90,7 +217,7 @@ agentSettingsRoutes.get('/:agentType', async (c) => {
  * PUT /api/agent-settings/:agentType
  * Upsert user's settings for a specific agent type.
  */
-agentSettingsRoutes.put('/:agentType', jsonValidator(SaveAgentSettingsSchema), async (c) => {
+agentSettingsRoutes.put('/:agentType', async (c) => {
   const userId = getUserId(c);
   const agentType = c.req.param('agentType');
 
@@ -98,9 +225,11 @@ agentSettingsRoutes.put('/:agentType', jsonValidator(SaveAgentSettingsSchema), a
     throw errors.badRequest(`Invalid agent type: ${agentType}`);
   }
 
-  // Body validated by SaveAgentSettingsSchema middleware (permissionMode, allowedTools,
-  // deniedTools, additionalEnv are all type-checked by Valibot)
-  const body = c.req.valid('json');
+  const parsedBody = await parseAgentSettingsBody(c);
+  if (parsedBody instanceof Response) {
+    return parsedBody;
+  }
+  const body = parsedBody;
 
   const db = drizzle(c.env.DATABASE, { schema });
   const now = new Date();
@@ -118,8 +247,8 @@ agentSettingsRoutes.put('/:agentType', jsonValidator(SaveAgentSettingsSchema), a
     .limit(1);
 
   // Clear opencodeBaseUrl when switching to a provider that doesn't need it
-  const requiresBaseUrl = (p: string | null | undefined) =>
-    p === 'custom' || p === 'openai-compatible';
+  const requiresBaseUrl = (provider: OpenCodeProvider | null | undefined) =>
+    provider ? OPENCODE_PROVIDERS[provider].requiresBaseUrl : false;
 
   const values = {
     model: body.model ?? null,
@@ -165,7 +294,11 @@ agentSettingsRoutes.put('/:agentType', jsonValidator(SaveAgentSettingsSchema), a
     .limit(1);
 
   const status = existing[0] ? 200 : 201;
-  return c.json(toResponse(rows[0]!), status);
+  const saved = rows[0];
+  if (!saved) {
+    throw errors.internal('Agent settings save did not return a row');
+  }
+  return c.json(toResponse(saved), status);
 });
 
 /**
