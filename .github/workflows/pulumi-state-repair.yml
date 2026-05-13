@@ -318,6 +318,11 @@ jobs:
           import_resource "cloudflare:index/d1Database:D1Database" "${PREFIX}-database" "${CF_ACCOUNT_ID}/${MAIN_DB_ID}"
           import_resource "cloudflare:index/d1Database:D1Database" "${PREFIX}-observability" "${CF_ACCOUNT_ID}/${OBS_DB_ID}"
           import_resource "cloudflare:index/workersRoute:WorkersRoute" "${PREFIX}-route-vm-exclusion" "${CF_ZONE_ID}/${VM_ROUTE_ID}"
+
+          # 4. Import PagesDomain (custom domain for Pages project)
+          PAGES_PROJECT_NAME="${PREFIX}-web-${STACK}"
+          PAGES_DOMAIN="app.${BASE_DOMAIN}"
+          import_resource "cloudflare:index/pagesDomain:PagesDomain" "${PREFIX}-pages-domain" "${CF_ACCOUNT_ID}/${PAGES_PROJECT_NAME}/${PAGES_DOMAIN}"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
