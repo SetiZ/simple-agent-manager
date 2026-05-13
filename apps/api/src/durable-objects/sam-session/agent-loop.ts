@@ -20,6 +20,8 @@ import type { Env } from '../../env';
 import { log } from '../../lib/logger';
 import { getCredentialEncryptionKey } from '../../lib/secrets';
 import { getPlatformAgentCredential } from '../../services/platform-credentials';
+import type { OpenAIMessage } from './payload-size';
+import { estimateMessagesBytes, trimMessagesToFit, truncateToolResult } from './payload-size';
 import type {
   AnthropicToolDef,
   CollectedToolCall,
@@ -131,19 +133,8 @@ function isWorkersAIModel(model: string): boolean {
 }
 
 // =============================================================================
-// OpenAI message types (canonical internal format)
+// OpenAI message/tool types
 // =============================================================================
-
-interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
-  tool_call_id?: string;
-}
 
 interface OpenAITool {
   type: 'function';
@@ -640,9 +631,20 @@ export async function runAgentLoop(
     continueLoop = false;
     turnCount++;
 
+    // Trim messages to fit within the request body budget
+    const fixedOverhead = systemPrompt.length + JSON.stringify(tools).length + 500;
+    const llmMessages = trimMessagesToFit(messages, config.maxRequestBodyBytes, fixedOverhead);
+    if (llmMessages.length < messages.length) {
+      log.info('sam.messages_trimmed', {
+        original: messages.length,
+        trimmed: llmMessages.length,
+        estimatedBytes: estimateMessagesBytes(llmMessages),
+      });
+    }
+
     let response: Response;
     try {
-      response = await callLLM(env, config, messages, userId, conversationId, systemPrompt, tools);
+      response = await callLLM(env, config, llmMessages, userId, conversationId, systemPrompt, tools);
     } catch (fetchErr) {
       const errMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       const isTimeout = errMsg.includes('abort');
@@ -715,14 +717,16 @@ export async function runAgentLoop(
       // Execute each tool and add results
       for (const tc of toolCalls) {
         const result = await executeToolFn(tc, toolCtx);
-        const resultStr = JSON.stringify(result);
+        const fullResultStr = JSON.stringify(result);
 
+        // Stream and persist the FULL result; only truncate for LLM context
         await writer.write(encodeSseEvent({ type: 'tool_result', tool: tc.name, result }));
-        persistMessage(conversationId, 'tool_result', resultStr, null, tc.id);
+        persistMessage(conversationId, 'tool_result', fullResultStr, null, tc.id);
 
+        const llmResultStr = truncateToolResult(fullResultStr, config.maxToolResultBytes);
         messages.push({
           role: 'tool',
-          content: resultStr,
+          content: llmResultStr,
           tool_call_id: tc.id,
         });
       }
