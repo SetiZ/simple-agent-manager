@@ -95,11 +95,12 @@ export const ProjectMessageView: FC<ProjectMessageViewProps> = ({
     prevMsgCountRef.current = currentCount;
   }, [lc.messages, animatedUserMsgIds]);
 
-  // Identify the last assistant message for TypewriterText animation
-  const lastAssistantIdx = useMemo(() => {
-    for (let i = conversationItems.length - 1; i >= 0; i--) {
-      if (conversationItems[i]?.kind === 'agent_message') return i;
-    }
+  // Identify the animation target: only animate if the very last item is an
+  // agent_message. If a tool_call or thinking block is the latest item, the
+  // previous agent_message should NOT be animated — its text is settled.
+  const animationTargetIdx = useMemo(() => {
+    const lastIdx = conversationItems.length - 1;
+    if (lastIdx >= 0 && conversationItems[lastIdx]?.kind === 'agent_message') return lastIdx;
     return -1;
   }, [conversationItems]);
 
@@ -223,7 +224,7 @@ export const ProjectMessageView: FC<ProjectMessageViewProps> = ({
                   item={item}
                   onFileClick={lc.session?.workspaceId && lc.sessionState === 'active' ? lc.handleFileClick : undefined}
                   onLoadToolContent={handleLoadToolContent}
-                  animateText={item.kind === 'agent_message' && (index - lc.firstItemIndex) === lastAssistantIdx && lc.agentActivity === 'responding'}
+                  animateText={item.kind === 'agent_message' && (index - lc.firstItemIndex) === animationTargetIdx && lc.agentActivity === 'responding'}
                   animateUserMessage={item.kind === 'user_message' && animatedUserMsgIds.has(item.id)}
                 />
               </div>
