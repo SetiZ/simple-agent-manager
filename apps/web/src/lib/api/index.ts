@@ -65,10 +65,13 @@ export {
   deleteAgentCredentialByKind,
   deleteAgentProfile,
   deleteAgentSettings,
+  deleteProfileRuntimeEnvVar,
+  deleteProfileRuntimeFile,
   deleteProjectAgentCredential,
   getAgentSettings,
   getAnalyticsApiUrl,
   getClientErrorsApiUrl,
+  getProfileRuntimeConfig,
   getTranscribeApiUrl,
   getTtsApiUrl,
   listAgentCredentials,
@@ -80,6 +83,8 @@ export {
   saveProjectAgentCredential,
   toggleAgentCredential,
   updateAgentProfile,
+  upsertProfileRuntimeEnvVar,
+  upsertProfileRuntimeFile,
 } from './agents';
 export { getCurrentUser } from './auth';
 export { API_URL, ApiClientError, request } from './client';
