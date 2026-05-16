@@ -30,6 +30,7 @@ import * as missionState from './missions';
 import * as policies from './policies';
 import * as reconciliation from './reconciliation';
 import { parseCountCnt, parseMaxLatest, parseMetaValue } from './row-schemas';
+import * as sessionSummarySync from './session-summary-sync';
 import * as sessions from './sessions';
 import type { Env, SummaryData } from './types';
 
@@ -772,5 +773,15 @@ export class ProjectData extends DurableObject<Env> {
       await this.env.DATABASE.prepare('UPDATE projects SET last_activity_at = ?, active_session_count = ?, updated_at = ? WHERE id = ?')
         .bind(summary.lastActivityAt, summary.activeSessionCount, new Date().toISOString(), projectId).run();
     } catch (err) { log.error('d1_summary_sync_failed', { projectId, ...serializeError(err) }); }
+
+    // Sync session summaries to D1 for cross-project queries
+    try {
+      await this.syncSessionSummariesToD1(projectId);
+    } catch (err) { log.error('d1_session_summary_sync_failed', { projectId, ...serializeError(err) }); }
+  }
+
+  /** Batch-sync session metadata from DO SQLite to D1 session_summaries table. */
+  private async syncSessionSummariesToD1(projectId: string): Promise<void> {
+    await sessionSummarySync.syncSessionSummariesToD1(this.sql, this.env, projectId);
   }
 }
