@@ -25,7 +25,7 @@ User-facing compute usage and quota enforcement currently use workspace-scoped `
 - [x] Update `SettingsComputeUsage.tsx` to show node-hours, node-based vCPU-hours, active node count, and active node rows.
 - [x] Update Playwright audit mock data for the new user compute response shape.
 - [x] Add or update tests proving idle platform node time counts for quota and user compute usage.
-- [ ] Run lint, typecheck, tests, build, and mandatory Playwright visual audit for changed UI.
+- [x] Run lint, typecheck, tests, build, and mandatory Playwright visual audit for changed UI.
 
 ## Acceptance Criteria
 
