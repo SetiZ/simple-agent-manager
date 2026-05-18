@@ -308,7 +308,7 @@ export function ProjectLibrary() {
               className={`p-2 border-none cursor-pointer ${FOCUS_RING} ${
                 viewMode === 'list'
                   ? 'bg-accent/10 text-accent'
-                  : 'bg-surface text-fg-muted hover:text-fg-primary'
+                  : 'bg-[rgba(8,15,12,0.4)] text-fg-muted hover:text-fg-primary'
               }`}
             >
               <List size={16} />
@@ -320,7 +320,7 @@ export function ProjectLibrary() {
               className={`p-2 border-none cursor-pointer ${FOCUS_RING} ${
                 viewMode === 'grid'
                   ? 'bg-accent/10 text-accent'
-                  : 'bg-surface text-fg-muted hover:text-fg-primary'
+                  : 'bg-[rgba(8,15,12,0.4)] text-fg-muted hover:text-fg-primary'
               }`}
             >
               <Grid3X3 size={16} />
@@ -334,7 +334,7 @@ export function ProjectLibrary() {
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as SortOption)}
             aria-label="Sort by"
-            className="px-2.5 py-2 text-sm rounded-lg border border-border-default bg-surface-inset text-fg-primary focus:outline-none focus:border-accent cursor-pointer shrink-0"
+            className="px-2.5 py-2 text-sm rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)]-inset text-fg-primary focus:outline-none focus:border-accent cursor-pointer shrink-0"
           >
             <option value="createdAt">Newest</option>
             <option value="filename">Name</option>
@@ -350,7 +350,7 @@ export function ProjectLibrary() {
           className={`relative p-2 rounded-lg border cursor-pointer ${FOCUS_RING} ${
             showFilters || activeFilterCount > 0
               ? 'border-accent bg-accent/10 text-accent'
-              : 'border-border-default bg-surface text-fg-muted hover:text-fg-primary'
+              : 'border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.4)] text-fg-muted hover:text-fg-primary'
           }`}
         >
           <Filter size={16} />
@@ -365,7 +365,7 @@ export function ProjectLibrary() {
         <button
           onClick={() => setShowCreateDir(true)}
           aria-label="New folder"
-          className={`p-2 rounded-lg border border-border-default cursor-pointer bg-surface text-fg-muted hover:text-fg-primary ${FOCUS_RING} shrink-0`}
+          className={`p-2 rounded-lg border border-[rgba(34,197,94,0.10)] cursor-pointer bg-[rgba(8,15,12,0.4)] text-fg-muted hover:text-fg-primary ${FOCUS_RING} shrink-0`}
         >
           <FolderPlus size={16} />
         </button>
@@ -386,14 +386,14 @@ export function ProjectLibrary() {
 
       {/* Filter bar (collapsible) */}
       {showFilters && (
-        <div className="flex flex-col gap-3 p-3 rounded-lg border border-border-default bg-surface-inset">
+        <div className="flex flex-col gap-3 p-3 rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)]-inset">
           {/* Sort (mobile only — hidden on desktop where it's in the header) */}
           {isMobile && (
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as SortOption)}
               aria-label="Sort by"
-              className="w-full px-2.5 py-2 text-sm rounded-lg border border-border-default bg-surface text-fg-primary focus:outline-none focus:border-accent cursor-pointer"
+              className="w-full px-2.5 py-2 text-sm rounded-lg text-fg-primary focus:outline-none focus:border-accent cursor-pointer"
             >
               <option value="createdAt">Newest</option>
               <option value="filename">Name</option>
@@ -412,7 +412,7 @@ export function ProjectLibrary() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search files and folders..."
-              className="w-full pl-9 pr-9 py-2 text-sm rounded-lg border border-border-default bg-surface text-fg-primary placeholder:text-fg-muted focus:outline-none focus:border-accent"
+              className="w-full pl-9 pr-9 py-2 text-sm rounded-lg text-fg-primary placeholder:text-fg-muted focus:outline-none focus:border-accent"
             />
             {/* Inline spinner shown while debounce is pending or API is in-flight */}
             {(isSearchPending || refreshing) && searchInput && (
@@ -434,7 +434,7 @@ export function ProjectLibrary() {
                     className={`px-2.5 py-1 rounded-full text-xs border-none cursor-pointer transition-colors ${FOCUS_RING} ${
                       isActive
                         ? 'bg-accent text-white'
-                        : 'bg-surface text-fg-muted hover:bg-accent/10 hover:text-accent'
+                        : 'bg-[rgba(8,15,12,0.4)] text-fg-muted hover:bg-accent/10 hover:text-accent'
                     }`}
                   >
                     {tag}
@@ -453,7 +453,7 @@ export function ProjectLibrary() {
                 className={`px-3 py-1.5 rounded-lg text-xs border-none cursor-pointer transition-colors ${FOCUS_RING} ${
                   sourceFilter === src
                     ? 'bg-accent text-white'
-                    : 'bg-surface text-fg-muted hover:bg-accent/10 hover:text-accent'
+                    : 'bg-[rgba(8,15,12,0.4)] text-fg-muted hover:bg-accent/10 hover:text-accent'
                 }`}
               >
                 {src === 'all' ? 'All' : src === 'user' ? 'User' : 'Agent'}
@@ -517,7 +517,7 @@ export function ProjectLibrary() {
               key={dir.path}
               onClick={() => navigateToDirectory(dir.path)}
               aria-label={`Folder: ${dir.name}, ${dir.fileCount} file${dir.fileCount !== 1 ? 's' : ''}`}
-              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border border-border-default bg-surface hover:bg-surface-inset cursor-pointer aspect-square ${FOCUS_RING}`}
+              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)] hover:bg-surface-inset cursor-pointer aspect-square ${FOCUS_RING}`}
             >
               <Folder size={32} className="text-accent shrink-0" aria-hidden="true" />
               <span className="text-sm font-medium text-fg-primary truncate max-w-full text-center">

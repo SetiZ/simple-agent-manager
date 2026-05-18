@@ -6,7 +6,6 @@ import { Outlet, useLocation, useParams } from 'react-router';
 import { useAppShell } from '../components/AppShell';
 import { ProjectInfoPanel } from '../components/project/ProjectInfoPanel';
 import { SettingsDrawer } from '../components/project/SettingsDrawer';
-import { UserMenu } from '../components/UserMenu';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { getProject, listGitHubInstallations } from '../lib/api';
 import { ProjectContext } from './ProjectContext';
@@ -67,7 +66,7 @@ export function Project() {
 
   if (!projectId) {
     return (
-      <PageLayout title="Project" maxWidth="xl" headerRight={<UserMenu />}>
+      <PageLayout title="Project" maxWidth="xl">
         <Alert variant="error">Project ID is missing.</Alert>
       </PageLayout>
     );

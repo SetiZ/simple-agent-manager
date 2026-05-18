@@ -411,7 +411,7 @@ function BudgetSettingsSection() {
                 value={dailyInput}
                 onChange={(e) => setDailyInput(e.target.value)}
                 placeholder={budget?.effectiveLimits.dailyInputTokenLimit.toLocaleString() ?? '500,000'}
-                className="w-full px-3 py-2.5 min-h-[44px] rounded-md border border-border-default bg-surface text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                className="w-full px-3 py-2.5 min-h-[44px] rounded-md text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
             </div>
 
@@ -427,7 +427,7 @@ function BudgetSettingsSection() {
                 value={dailyOutput}
                 onChange={(e) => setDailyOutput(e.target.value)}
                 placeholder={budget?.effectiveLimits.dailyOutputTokenLimit.toLocaleString() ?? '200,000'}
-                className="w-full px-3 py-2.5 min-h-[44px] rounded-md border border-border-default bg-surface text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                className="w-full px-3 py-2.5 min-h-[44px] rounded-md text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
             </div>
 
@@ -443,7 +443,7 @@ function BudgetSettingsSection() {
                 value={monthlyCap}
                 onChange={(e) => setMonthlyCap(e.target.value)}
                 placeholder="No limit"
-                className="w-full px-3 py-2.5 min-h-[44px] rounded-md border border-border-default bg-surface text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                className="w-full px-3 py-2.5 min-h-[44px] rounded-md text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
             </div>
 
@@ -459,7 +459,7 @@ function BudgetSettingsSection() {
                 value={alertThreshold}
                 onChange={(e) => setAlertThreshold(e.target.value)}
                 placeholder="80"
-                className="w-full px-3 py-2.5 min-h-[44px] rounded-md border border-border-default bg-surface text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
+                className="w-full px-3 py-2.5 min-h-[44px] rounded-md text-fg-primary text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-primary"
               />
             </div>
           </div>

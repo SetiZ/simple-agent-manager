@@ -107,7 +107,7 @@ export const ProfileList: FC<ProfileListProps> = ({
           {profiles.map((profile) => (
             <div
               key={profile.id}
-              className="overflow-hidden rounded-md border border-border-default bg-page"
+              className="overflow-hidden rounded-md glass-surface"
             >
               <div className="flex items-start gap-3 p-3">
                 <div className="flex-1 min-w-0">
@@ -116,7 +116,7 @@ export const ProfileList: FC<ProfileListProps> = ({
                       {profile.name}
                     </span>
                     {profile.isBuiltin && (
-                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-surface border border-border-default text-fg-muted">
+                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-[rgba(34,197,94,0.08)] border border-[rgba(34,197,94,0.15)] text-accent">
                         built-in
                       </span>
                     )}

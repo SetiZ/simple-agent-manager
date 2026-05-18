@@ -3,7 +3,6 @@ import { PageLayout, Tabs } from '@simple-agent-manager/ui';
 import { Navigate, Outlet } from 'react-router';
 
 import { useAuth } from '../components/AuthProvider';
-import { UserMenu } from '../components/UserMenu';
 
 const ADMIN_TABS: Tab[] = [
   { id: 'users', label: 'Users', path: 'users' },
@@ -27,7 +26,7 @@ export function Admin() {
   }
 
   return (
-    <PageLayout title="Admin" maxWidth="xl" headerRight={<UserMenu />}>
+    <PageLayout title="Admin" maxWidth="xl">
       <Tabs tabs={ADMIN_TABS} basePath="/admin" />
       <div className="mt-4">
         <Outlet />

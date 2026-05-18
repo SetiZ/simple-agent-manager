@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { ProjectForm, type ProjectFormValues } from '../components/project/ProjectForm';
-import { UserMenu } from '../components/UserMenu';
 import { useToast } from '../hooks/useToast';
 import { createProject, listGitHubInstallations } from '../lib/api';
 import { API_URL } from '../lib/api/client';
@@ -85,7 +84,7 @@ export function ProjectCreate() {
   const canShowForm = installations.length > 0 || artifactsEnabled;
 
   return (
-    <PageLayout title="New Project" maxWidth="xl" headerRight={<UserMenu />}>
+    <PageLayout title="New Project" maxWidth="xl">
       <Breadcrumb
         segments={[
           { label: 'Home', path: '/dashboard' },

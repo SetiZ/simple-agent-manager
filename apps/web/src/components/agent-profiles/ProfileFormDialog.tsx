@@ -135,7 +135,7 @@ export const ProfileFormDialog: FC<ProfileFormDialogProps> = ({
     }
   };
 
-  const selectClasses = 'w-full rounded-md border border-border-default bg-surface text-fg-primary py-2.5 px-3 min-h-11';
+  const selectClasses = 'w-full rounded-md text-fg-primary py-2.5 px-3 min-h-11';
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} maxWidth="lg">
@@ -262,7 +262,7 @@ export const ProfileFormDialog: FC<ProfileFormDialogProps> = ({
             placeholder="Additional instructions appended to the system prompt..."
             rows={3}
             disabled={saving}
-            className="w-full rounded-md border border-border-default bg-surface text-fg-primary py-2.5 px-3 resize-y"
+            className="w-full rounded-md text-fg-primary py-2.5 px-3 resize-y"
           />
         </label>
 

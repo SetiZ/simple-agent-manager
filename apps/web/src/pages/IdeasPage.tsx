@@ -87,7 +87,7 @@ function IdeaCard({ idea, sessionCount, onClick }: IdeaCardProps) {
   return (
     <button
       onClick={onClick}
-      className="flex items-start gap-3 px-3 py-2.5 min-h-[56px] rounded-lg border border-border-default bg-surface hover:border-accent/40 transition-colors cursor-pointer text-left w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="flex items-start gap-3 px-3 py-2.5 min-h-[56px] rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)] hover:border-accent/40 transition-colors cursor-pointer text-left w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       aria-label={`View idea: ${idea.title}`}
     >
       {/* Content */}
@@ -268,14 +268,14 @@ export function IdeasPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search ideas..."
-            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-border-default bg-surface-inset text-fg-primary placeholder:text-fg-muted focus:outline-none focus:border-accent"
+            className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)]-inset text-fg-primary placeholder:text-fg-muted focus:outline-none focus:border-accent"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as IdeaStatus | 'all')}
           aria-label="Filter by status"
-          className="w-[140px] px-3 py-2 text-sm rounded-lg border border-border-default bg-surface-inset text-fg-primary focus:outline-none focus:border-accent cursor-pointer shrink-0"
+          className="w-[140px] px-3 py-2 text-sm rounded-lg border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)]-inset text-fg-primary focus:outline-none focus:border-accent cursor-pointer shrink-0"
         >
           <option value="all">All statuses</option>
           {STATUS_ORDER.map((status) => (

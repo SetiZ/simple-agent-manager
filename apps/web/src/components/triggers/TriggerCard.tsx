@@ -92,7 +92,7 @@ export const TriggerCard: FC<TriggerCardProps> = ({
             <MoreVertical size={16} />
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-surface border border-border-default rounded-md shadow-lg z-20 py-1">
+            <div className="absolute right-0 top-full mt-1 w-40 glass-surface rounded-md shadow-lg z-20 py-1">
               <button
                 onClick={() => { setMenuOpen(false); onEdit(trigger); }}
                 className="w-full text-left px-3 py-2 text-sm text-fg-primary hover:bg-surface-hover cursor-pointer bg-transparent border-none"

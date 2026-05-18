@@ -147,7 +147,7 @@ function AccountMapCanvasInner({ nodes: initialNodes, edges: initialEdges, isMob
       {/* Tooltip */}
       {tooltip && (
         <div
-          className={`fixed z-dropdown bg-surface border border-border-default rounded-lg px-3 py-2 shadow-lg pointer-events-none max-w-[260px] ${
+          className={`fixed z-dropdown glass-surface rounded-lg px-3 py-2 shadow-lg pointer-events-none max-w-[260px] ${
             isMobile ? 'left-4 right-4' : ''
           }`}
           style={

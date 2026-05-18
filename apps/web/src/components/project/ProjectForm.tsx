@@ -211,7 +211,7 @@ export function ProjectForm({
               className={`flex-1 rounded-md py-3 px-3 text-sm font-medium transition-colors ${
                 isArtifacts
                   ? 'border-2 border-accent bg-accent/10 text-accent'
-                  : 'border border-border-default bg-surface text-fg-muted hover:border-fg-muted'
+                  : 'border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)] text-fg-muted hover:border-fg-muted'
               }`}
             >
               SAM Git
@@ -225,7 +225,7 @@ export function ProjectForm({
               className={`flex-1 rounded-md py-3 px-3 text-sm font-medium transition-colors ${
                 !isArtifacts
                   ? 'border-2 border-accent bg-accent/10 text-accent'
-                  : 'border border-border-default bg-surface text-fg-muted hover:border-fg-muted'
+                  : 'border border-[rgba(34,197,94,0.10)] bg-[rgba(8,15,12,0.5)] text-fg-muted hover:border-fg-muted'
               }`}
             >
               GitHub
@@ -256,7 +256,7 @@ export function ProjectForm({
           onChange={(event) => handleChange('description', event.currentTarget.value)}
           rows={3}
           disabled={submitting}
-          className="w-full rounded-md border border-border-default bg-surface text-fg-primary py-2.5 px-3 resize-y"
+          className="w-full rounded-md text-fg-primary py-2.5 px-3 resize-y"
         />
       </label>
 
@@ -269,7 +269,7 @@ export function ProjectForm({
               value={values.installationId}
               onChange={(event) => handleInstallationChange(event.currentTarget.value)}
               disabled={submitting || isEditMode}
-              className="w-full rounded-md border border-border-default bg-surface text-fg-primary py-2.5 px-3 min-h-11"
+              className="w-full rounded-md text-fg-primary py-2.5 px-3 min-h-11"
             >
               {installations.length === 0 ? (
                 <option value="">No installations</option>

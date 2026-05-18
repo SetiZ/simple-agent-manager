@@ -60,7 +60,7 @@
     color: var(--sam-color-fg-primary);
   }
 
-  /* ── Form elements (dark theme) ── */
+  /* ── Form elements (glass-themed) ── */
   input[type="text"],
   input[type="url"],
   input[type="password"],
@@ -71,12 +71,13 @@
     width: 100%;
     padding: 0.5rem 0.75rem;
     min-height: 44px;
-    border: 1px solid var(--sam-color-border-default);
+    border: 1px solid rgba(34, 197, 94, 0.10);
     border-radius: var(--sam-radius-sm);
-    background-color: var(--sam-color-bg-inset);
+    background-color: rgba(8, 15, 12, 0.5);
     color: var(--sam-color-fg-primary);
     font-size: 0.875rem;
     font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   }
 
   input::placeholder,
@@ -89,8 +90,15 @@
   textarea:focus,
   select:focus {
     outline: none;
-    border-color: var(--sam-color-focus-ring);
-    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+    border-color: rgba(34, 197, 94, 0.35);
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.10), inset 0 0 8px rgba(34, 197, 94, 0.05);
+    background-color: rgba(8, 15, 12, 0.6);
+  }
+
+  input:hover:not(:focus):not(:disabled),
+  textarea:hover:not(:focus):not(:disabled),
+  select:hover:not(:focus):not(:disabled) {
+    border-color: rgba(34, 197, 94, 0.18);
   }
 
   input:disabled,
