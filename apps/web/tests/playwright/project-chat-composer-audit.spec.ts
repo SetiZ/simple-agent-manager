@@ -227,6 +227,12 @@ test.describe('Project chat composer audit', () => {
 
     const textarea = page.locator('textarea[role="combobox"]');
     await expect(textarea).toBeVisible();
+    await expect(page.getByText('Run the tests and summarize what fails.')).toBeVisible();
+    await screenshot(page, `project-chat-composer-new-prompts-${testInfo.project.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`);
+    await assertNoOverflow(page);
+
+    await page.getByText('Run the tests and summarize what fails.').click();
+    await expect(textarea).toHaveValue('Run the tests and summarize what fails.');
     await textarea.fill(`Implement shared composer behavior with unicode π, emoji, HTML-like <button>, and ${'very long wrapping text '.repeat(16)}`);
 
     await expect(page.locator('select[aria-label="Workspace profile"], select#workspace-profile-select')).toBeVisible();

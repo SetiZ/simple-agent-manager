@@ -149,10 +149,11 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
       {/* Token input */}
       {selectedDef && (
         <div className="mb-4">
-          <label className="block text-sm font-medium text-fg-primary mb-1">
+          <label htmlFor="cloud-provider-token" className="block text-sm font-medium text-fg-primary mb-1">
             {selectedDef.name} API Token
           </label>
           <Input
+            id="cloud-provider-token"
             type="password"
             autoComplete="off"
             value={token}
@@ -162,10 +163,11 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
 
           {selectedProvider === 'scaleway' && (
             <div className="mt-2">
-              <label className="block text-sm font-medium text-fg-primary mb-1">
+              <label htmlFor="scaleway-project-id" className="block text-sm font-medium text-fg-primary mb-1">
                 Scaleway Project ID
               </label>
               <Input
+                id="scaleway-project-id"
                 type="text"
                 value={scalewayProjectId}
                 onChange={(e) => { setScalewayProjectId(e.target.value); setValidatedKey(null); setValidationMessage(null); }}

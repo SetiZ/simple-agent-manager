@@ -35,7 +35,7 @@ Critical override for this `/do` run: do not merge under any circumstances. Comp
 - [x] Restore provisioning progress correctly when navigating back to an active session.
 - [x] Add 3-4 first-chat example prompts that populate the composer and respect project context where available.
 - [x] Add focused API/unit tests for credential validation and frontend tests for onboarding/provisioning/chat prompt behavior.
-- [ ] Run local Playwright visual audit for changed web surfaces on mobile and desktop.
+- [x] Run local Playwright visual audit for changed web surfaces on mobile and desktop.
 - [ ] Run full quality suite before PR.
 - [ ] Complete specialist review, staging verification, PR creation/update, and CI monitoring.
 - [ ] Stop before merge and report PR URL/status.
