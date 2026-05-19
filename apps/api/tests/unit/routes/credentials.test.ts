@@ -85,6 +85,67 @@ describe('Credentials Routes - OAuth Support', () => {
     };
 
     (drizzle as any).mockReturnValue(mockDB);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }), { status: 200 })));
+  });
+
+  describe('POST /api/credentials/agent/validate', () => {
+    it('validates a Claude API key against the provider models endpoint without storing it', async () => {
+      const res = await app.request('/api/credentials/agent/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentType: 'claude-code',
+          credentialKind: 'api-key',
+          credential: 'sk-ant-api03-1234567890abcdef',
+        }),
+      }, makeTestEnv());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.valid).toBe(true);
+      expect(body.validationMode).toBe('provider');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.anthropic.com/v1/models',
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-api-key': 'sk-ant-api03-1234567890abcdef' }),
+        })
+      );
+    });
+
+    it('returns 400 when provider validation rejects the API key', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(new Response(JSON.stringify({ error: 'bad key' }), { status: 401 }));
+
+      const res = await app.request('/api/credentials/agent/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentType: 'claude-code',
+          credentialKind: 'api-key',
+          credential: 'sk-ant-api03-1234567890abcdef',
+        }),
+      }, makeTestEnv());
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.message).toContain('Invalid or unauthorized Claude Code credential');
+    });
+
+    it('validates OAuth credentials by format only', async () => {
+      const res = await app.request('/api/credentials/agent/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agentType: 'claude-code',
+          credentialKind: 'oauth-token',
+          credential: 'sk-ant-oat01-1234567890abcdefghijklmnopqrstuvwxyz',
+        }),
+      }, makeTestEnv());
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.validationMode).toBe('format');
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('PUT /api/credentials/agent - OAuth credential save flow', () => {

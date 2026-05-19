@@ -271,6 +271,47 @@ describe('POST /api/credentials — cloud-provider credentials', () => {
   });
 });
 
+describe('POST /api/credentials/validate — cloud-provider validation', () => {
+  let app: Hono<{ Bindings: Env }>;
+
+  beforeEach(() => {
+    app = createTestApp();
+    vi.clearAllMocks();
+    mockValidateToken.mockResolvedValue(true);
+  });
+
+  it('validates a Hetzner token without encrypting or storing it', async () => {
+    const { encrypt } = await import('../../../src/services/encryption');
+
+    const res = await app.request('/api/credentials/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'hetzner', token: 'htz-api-token' }),
+    }, mockEnv);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.valid).toBe(true);
+    expect(body.provider).toBe('hetzner');
+    expect(mockValidateToken).toHaveBeenCalledOnce();
+    expect(encrypt).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when validation rejects the credential', async () => {
+    mockValidateToken.mockRejectedValueOnce(new Error('Unauthorized'));
+
+    const res = await app.request('/api/credentials/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'hetzner', token: 'bad-token' }),
+    }, mockEnv);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.message).toContain('Invalid or unauthorized hetzner credentials');
+  });
+});
+
 // ============================================================================
 // GET /api/credentials — list cloud-provider credentials
 // ============================================================================

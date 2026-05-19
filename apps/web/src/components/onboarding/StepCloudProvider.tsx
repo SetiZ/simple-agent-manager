@@ -3,7 +3,7 @@ import { PROVIDER_HELP,PROVIDER_LABELS } from '@simple-agent-manager/shared';
 import { Alert,Button, Input } from '@simple-agent-manager/ui';
 import { useState } from 'react';
 
-import { createCredential } from '../../lib/api';
+import { createCredential, validateCredential } from '../../lib/api';
 
 type CloudProvider = 'hetzner' | 'scaleway';
 
@@ -34,6 +34,9 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
   const [token, setToken] = useState('');
   const [scalewayProjectId, setScalewayProjectId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validatedKey, setValidatedKey] = useState<string | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (isComplete) {
@@ -51,22 +54,47 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
     );
   }
 
+  const getCredentialRequest = (): CreateCredentialRequest | null => {
+    if (!selectedProvider || !token.trim()) return null;
+    if (selectedProvider === 'hetzner') return { provider: 'hetzner', token: token.trim() };
+    if (!scalewayProjectId.trim()) return null;
+    return { provider: 'scaleway', secretKey: token.trim(), projectId: scalewayProjectId.trim() };
+  };
+
+  const credentialKey = JSON.stringify(getCredentialRequest());
+  const isValidated = validatedKey === credentialKey;
+
+  const handleValidate = async () => {
+    const data = getCredentialRequest();
+    if (!data) {
+      setError(selectedProvider === 'scaleway' ? 'Scaleway Project ID is required' : 'Select a provider and enter a token');
+      return;
+    }
+    setValidating(true);
+    setValidationMessage(null);
+    setError(null);
+    try {
+      const result = await validateCredential(data);
+      setValidatedKey(credentialKey);
+      setValidationMessage(result.message);
+    } catch (err) {
+      setValidatedKey(null);
+      setError(err instanceof Error ? err.message : 'Credential validation failed');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const handleSave = async () => {
-    if (!selectedProvider || !token.trim()) return;
+    const data = getCredentialRequest();
+    if (!data) return;
+    if (!isValidated) {
+      await handleValidate();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      let data: CreateCredentialRequest;
-      if (selectedProvider === 'hetzner') {
-        data = { provider: 'hetzner', token: token.trim() };
-      } else {
-        if (!scalewayProjectId.trim()) {
-          setError('Scaleway Project ID is required');
-          setSaving(false);
-          return;
-        }
-        data = { provider: 'scaleway', secretKey: token.trim(), projectId: scalewayProjectId.trim() };
-      }
       await createCredential(data);
       onComplete();
     } catch (err) {
@@ -100,7 +128,12 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
           <button
             key={provider.id}
             type="button"
-            onClick={() => { setSelectedProvider(provider.id); setError(null); }}
+            onClick={() => {
+              setSelectedProvider(provider.id);
+              setError(null);
+              setValidatedKey(null);
+              setValidationMessage(null);
+            }}
             className={`p-3 rounded-md border text-left transition-colors cursor-pointer bg-surface ${
               selectedProvider === provider.id
                 ? 'border-accent ring-1 ring-accent'
@@ -123,7 +156,7 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
             type="password"
             autoComplete="off"
             value={token}
-            onChange={(e) => setToken(e.target.value)}
+            onChange={(e) => { setToken(e.target.value); setValidatedKey(null); setValidationMessage(null); }}
             placeholder={`Paste your ${selectedDef.name} API token`}
           />
 
@@ -135,7 +168,7 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
               <Input
                 type="text"
                 value={scalewayProjectId}
-                onChange={(e) => setScalewayProjectId(e.target.value)}
+                onChange={(e) => { setScalewayProjectId(e.target.value); setValidatedKey(null); setValidationMessage(null); }}
                 placeholder="Your Scaleway project ID"
               />
             </div>
@@ -152,6 +185,12 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
         </div>
       )}
 
+      {validationMessage && (
+        <div className="mb-3">
+          <Alert variant="success">{validationMessage}</Alert>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center justify-between">
         <button
@@ -161,14 +200,24 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
         >
           Skip this step
         </button>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleSave}
-          disabled={!isValid || saving}
-        >
-          {saving ? 'Saving...' : 'Connect'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleValidate}
+            disabled={!isValid || validating || saving}
+          >
+            {validating ? 'Testing...' : isValidated ? 'Tested' : 'Test connection'}
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSave}
+            disabled={!isValid || saving || validating || !isValidated}
+          >
+            {saving ? 'Saving...' : 'Connect'}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { Card } from '@simple-agent-manager/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { getTrialStatus, listAgentCredentials,listCredentials, listGitHubInstallations } from '../../lib/api';
 import { useAuth } from '../AuthProvider';
@@ -25,14 +26,16 @@ interface SetupStatus {
   hasAgent: boolean;
   hasCloud: boolean;
   hasGitHub: boolean;
+  trialAvailable: boolean;
 }
 
 export function OnboardingWizard() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [dismissed, setDismissed] = useState<boolean | null>(null);
   const [currentStep, setCurrentStep] = useState<WizardStep>('agent');
-  const [status, setStatus] = useState<SetupStatus>({ hasAgent: false, hasCloud: false, hasGitHub: false });
+  const [status, setStatus] = useState<SetupStatus>({ hasAgent: false, hasCloud: false, hasGitHub: false, trialAvailable: false });
 
   const userId = user?.id;
 
@@ -62,12 +65,17 @@ export function OnboardingWizard() {
       const effectiveHasAgent = hasAgent || trialAvailable;
       const effectiveHasCloud = hasCloud || trialAvailable;
 
-      setStatus({ hasAgent: effectiveHasAgent, hasCloud: effectiveHasCloud, hasGitHub });
+      setStatus({ hasAgent: effectiveHasAgent, hasCloud: effectiveHasCloud, hasGitHub, trialAvailable });
 
-      // If all complete (or trial covers agent+cloud), auto-dismiss
-      if (effectiveHasAgent && effectiveHasCloud && hasGitHub) {
+      // If a user has completed their own setup, stay out of the way.
+      if (hasAgent && hasCloud && hasGitHub) {
         setDismissed(true);
         if (userId) localStorage.setItem(getStorageKey(userId), 'true');
+        return;
+      }
+
+      if (effectiveHasAgent && effectiveHasCloud && hasGitHub) {
+        setCurrentStep('how-it-works');
         return;
       }
 
@@ -121,6 +129,11 @@ export function OnboardingWizard() {
 
   const handleStepSkip = (step: WizardStep) => {
     advanceStep(step);
+  };
+
+  const finishAndNavigate = (path: string) => {
+    handleDismiss();
+    navigate(path);
   };
 
   if (loading || dismissed === null || dismissed) return null;
@@ -198,7 +211,12 @@ export function OnboardingWizard() {
           />
         )}
         {currentStep === 'how-it-works' && (
-          <StepHowItWorks onComplete={() => handleStepComplete('how-it-works')} />
+          <StepHowItWorks
+            trialAvailable={status.trialAvailable}
+            onComplete={() => handleStepComplete('how-it-works')}
+            onCreateProject={() => finishAndNavigate('/projects/new')}
+            onOwnSetup={() => setCurrentStep('agent')}
+          />
         )}
       </div>
     </Card>

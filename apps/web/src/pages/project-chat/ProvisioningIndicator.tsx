@@ -2,7 +2,6 @@ import type { TaskExecutionStep } from '@simple-agent-manager/shared';
 import {
   EXECUTION_STEP_LABELS,
   EXECUTION_STEP_ORDER,
-  TASK_EXECUTION_STEPS,
 } from '@simple-agent-manager/shared';
 import { Spinner } from '@simple-agent-manager/ui';
 import { useEffect, useState } from 'react';
@@ -10,9 +9,24 @@ import { useEffect, useState } from 'react';
 import type { ProvisioningState } from './types';
 import { isTerminal } from './types';
 
-const PROVISIONING_STEPS: TaskExecutionStep[] = TASK_EXECUTION_STEPS.filter(
-  (s) => s !== 'running' && s !== 'awaiting_followup'
-);
+interface ProvisioningStage {
+  label: string;
+  steps: TaskExecutionStep[];
+}
+
+const PROVISIONING_STAGES: ProvisioningStage[] = [
+  { label: 'Provisioning VM', steps: ['node_selection', 'node_provisioning', 'node_agent_ready'] },
+  { label: 'Cloning repository', steps: ['workspace_creation'] },
+  { label: 'Installing dependencies', steps: ['workspace_ready', 'attachment_transfer'] },
+  { label: 'Starting agent', steps: ['agent_session'] },
+];
+
+function getStageIndex(step: TaskExecutionStep | null): number {
+  if (!step) return 0;
+  if (step === 'running' || step === 'awaiting_followup') return PROVISIONING_STAGES.length - 1;
+  const index = PROVISIONING_STAGES.findIndex((stage) => stage.steps.includes(step));
+  return index >= 0 ? index : 0;
+}
 
 export function ProvisioningIndicator({ state, bootLogCount, onViewLogs }: { state: ProvisioningState; bootLogCount: number; onViewLogs: () => void }) {
   const [elapsed, setElapsed] = useState(0);
@@ -28,10 +42,11 @@ export function ProvisioningIndicator({ state, bootLogCount, onViewLogs }: { sta
 
   const statusLabel = state.status === 'failed' ? 'Setup failed'
     : state.status === 'cancelled' ? 'Cancelled'
-    : state.executionStep ? EXECUTION_STEP_LABELS[state.executionStep]
+    : state.executionStep ? `${PROVISIONING_STAGES[getStageIndex(state.executionStep)]?.label ?? EXECUTION_STEP_LABELS[state.executionStep]} (${getStageIndex(state.executionStep) + 1}/${PROVISIONING_STAGES.length})`
     : 'Starting...';
 
   const currentStepOrder = state.executionStep ? EXECUTION_STEP_ORDER[state.executionStep] : -1;
+  const currentStageIndex = getStageIndex(state.executionStep);
   const isFailed = state.status === 'failed';
 
   return (
@@ -57,24 +72,34 @@ export function ProvisioningIndicator({ state, bootLogCount, onViewLogs }: { sta
       </div>
 
       {!isTerminal(state.status) && (
-        <div className="flex gap-[2px] h-[3px] rounded-sm overflow-hidden">
-          {PROVISIONING_STEPS.map((step) => {
-            const stepOrder = EXECUTION_STEP_ORDER[step];
-            const isComplete = stepOrder < currentStepOrder;
-            const isCurrent = stepOrder === currentStepOrder;
+        <div className="sam-type-caption text-fg-muted mb-2">
+          Usually takes 2-4 minutes. Current detail: {state.executionStep ? EXECUTION_STEP_LABELS[state.executionStep] : 'Waiting for task runner...'}
+        </div>
+      )}
+
+      {!isTerminal(state.status) && (
+        <div className="grid grid-cols-4 gap-1">
+          {PROVISIONING_STAGES.map((stage, index) => {
+            const isComplete = index < currentStageIndex;
+            const isCurrent = index === currentStageIndex;
+            const hasStarted = stage.steps.some((step) => EXECUTION_STEP_ORDER[step] <= currentStepOrder);
             return (
-              <div
-                key={step}
-                title={EXECUTION_STEP_LABELS[step]}
-                className="flex-1 transition-colors duration-300"
-                style={{
-                  backgroundColor: isComplete
-                    ? 'var(--sam-color-success)'
-                    : isCurrent
-                    ? 'var(--sam-color-accent-primary)'
-                    : 'var(--sam-color-border-default)',
-                }}
-              />
+              <div key={stage.label} className="min-w-0">
+                <div
+                  title={stage.label}
+                  className="h-[3px] rounded-sm transition-colors duration-300"
+                  style={{
+                    backgroundColor: isComplete
+                      ? 'var(--sam-color-success)'
+                      : isCurrent || hasStarted
+                      ? 'var(--sam-color-accent-primary)'
+                      : 'var(--sam-color-border-default)',
+                  }}
+                />
+                <div className={`mt-1 text-[10px] leading-tight truncate ${isCurrent ? 'text-fg-primary' : 'text-fg-muted'}`}>
+                  {index + 1}. {stage.label}
+                </div>
+              </div>
             );
           })}
         </div>

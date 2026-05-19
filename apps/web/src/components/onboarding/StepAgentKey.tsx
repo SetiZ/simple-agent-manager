@@ -3,7 +3,7 @@ import { AGENT_CATALOG } from '@simple-agent-manager/shared';
 import { Alert,Button, Input } from '@simple-agent-manager/ui';
 import { useState } from 'react';
 
-import { saveAgentCredential } from '../../lib/api';
+import { saveAgentCredential, validateAgentCredential } from '../../lib/api';
 
 interface StepAgentKeyProps {
   onComplete: () => void;
@@ -15,6 +15,9 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
   const [selectedAgent, setSelectedAgent] = useState<AgentType | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validatedKey, setValidatedKey] = useState<string | null>(null);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (isComplete) {
@@ -32,16 +35,49 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
     );
   }
 
+  const getCredentialRequest = (): SaveAgentCredentialRequest | null => {
+    if (!selectedAgent || !apiKey.trim()) return null;
+    return {
+      agentType: selectedAgent,
+      credentialKind: 'api-key',
+      credential: apiKey.trim(),
+    };
+  };
+
+  const credentialKey = JSON.stringify(getCredentialRequest());
+  const isValidated = validatedKey === credentialKey;
+
+  const handleValidate = async () => {
+    const data = getCredentialRequest();
+    if (!data) {
+      setError('Select an agent and enter an API key');
+      return;
+    }
+    setValidating(true);
+    setValidationMessage(null);
+    setError(null);
+    try {
+      const result = await validateAgentCredential(data);
+      setValidatedKey(credentialKey);
+      setValidationMessage(result.message);
+    } catch (err) {
+      setValidatedKey(null);
+      setError(err instanceof Error ? err.message : 'API key validation failed');
+    } finally {
+      setValidating(false);
+    }
+  };
+
   const handleSave = async () => {
-    if (!selectedAgent || !apiKey.trim()) return;
+    const data = getCredentialRequest();
+    if (!data) return;
+    if (!isValidated) {
+      await handleValidate();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const data: SaveAgentCredentialRequest = {
-        agentType: selectedAgent,
-        credentialKind: 'api-key',
-        credential: apiKey.trim(),
-      };
       await saveAgentCredential(data);
       onComplete();
     } catch (err) {
@@ -72,7 +108,12 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
           <button
             key={agent.id}
             type="button"
-            onClick={() => { setSelectedAgent(agent.id); setError(null); }}
+            onClick={() => {
+              setSelectedAgent(agent.id);
+              setError(null);
+              setValidatedKey(null);
+              setValidationMessage(null);
+            }}
             className={`p-3 rounded-md border text-left transition-colors cursor-pointer bg-surface ${
               selectedAgent === agent.id
                 ? 'border-accent ring-1 ring-accent'
@@ -95,7 +136,11 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
             type="password"
             autoComplete="off"
             value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
+            onChange={(e) => {
+              setApiKey(e.target.value);
+              setValidatedKey(null);
+              setValidationMessage(null);
+            }}
             placeholder={`Paste your ${selectedDef.provider} API key`}
           />
           <a
@@ -109,6 +154,12 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
         </div>
       )}
 
+      {validationMessage && (
+        <div className="mb-3">
+          <Alert variant="success">{validationMessage}</Alert>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex items-center justify-between">
         <button
@@ -118,14 +169,24 @@ export function StepAgentKey({ onComplete, onSkip, isComplete }: StepAgentKeyPro
         >
           Skip this step
         </button>
-        <Button
-          variant="primary"
-          size="md"
-          onClick={handleSave}
-          disabled={!selectedAgent || !apiKey.trim() || saving}
-        >
-          {saving ? 'Saving...' : 'Connect'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={handleValidate}
+            disabled={!selectedAgent || !apiKey.trim() || validating || saving}
+          >
+            {validating ? 'Testing...' : isValidated ? 'Tested' : 'Test key'}
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSave}
+            disabled={!selectedAgent || !apiKey.trim() || saving || validating || !isValidated}
+          >
+            {saving ? 'Saving...' : 'Connect'}
+          </Button>
+        </div>
       </div>
     </div>
   );
