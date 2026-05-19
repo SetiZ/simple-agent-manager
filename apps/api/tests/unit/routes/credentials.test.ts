@@ -52,6 +52,14 @@ function makeTestEnv(): Env {
   } as Env;
 }
 
+function putAgentCredential(app: Hono<{ Bindings: Env }>, request: unknown) {
+  return app.request('/api/credentials/agent', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  }, makeTestEnv());
+}
+
 function makeFakeSecret(prefix: string): string {
   return `${prefix}-${'1234567890abcdef'}`;
 }
@@ -292,6 +300,24 @@ describe('Credentials Routes - OAuth Support', () => {
       expect(res.status).toBe(201);
     });
 
+    it('should accept an Amp API key from the shared agent catalog', async () => {
+      mockDB.limit.mockResolvedValueOnce([]);
+
+      const res = await putAgentCredential(app, {
+        agentType: 'amp',
+        credentialKind: 'api-key',
+        credential: 'sgamp_test_access_token_1234567890',
+        autoActivate: true,
+      } satisfies SaveAgentCredentialRequest);
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.agentType).toBe('amp');
+      expect(body.provider).toBe('amp');
+      expect(body.credentialKind).toBe('api-key');
+      expect(body.label).toBeUndefined();
+    });
+
     it('should reject Claude OAuth token when saved as API key', async () => {
       const request = {
         agentType: 'claude-code',
@@ -358,6 +384,28 @@ describe('Credentials Routes - OAuth Support', () => {
       expect(body.provider).toBe('google');
       expect(body.credentialKind).toBe('api-key');
       expect(body.isActive).toBe(true);
+    });
+
+    it('should reject OAuth token for Amp', async () => {
+      const res = await putAgentCredential(app, {
+        agentType: 'amp',
+        credentialKind: 'oauth-token',
+        credential: 'oauth_token_that_is_long_enough_to_pass_validation_1234567890',
+      } satisfies SaveAgentCredentialRequest);
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.message).toContain('not supported');
+    });
+
+    it('should reject unknown agents through schema validation', async () => {
+      const res = await putAgentCredential(app, {
+        agentType: 'unknown-agent',
+        credentialKind: 'api-key',
+        credential: 'opaque-key',
+      });
+
+      expect(res.status).toBe(400);
     });
   });
 

@@ -44,6 +44,12 @@ const MOCK_AGENT_CODEX = {
   description: 'OpenAI Codex agent',
 };
 
+const MOCK_AGENT_AMP = {
+  id: 'amp',
+  name: 'Amp',
+  description: "Sourcegraph's managed AI coding agent",
+};
+
 type AgentMock = typeof MOCK_AGENT_OPENCODE;
 
 function makeSettings(overrides: {
@@ -379,7 +385,7 @@ test.describe('Unified Agent Cards — Mobile', () => {
 
   test('multiple agents rendered: layout holds on mobile', async ({ page }) => {
     await setupApiMocks(page, {
-      agents: [MOCK_AGENT_OPENCODE, MOCK_AGENT_CLAUDE, MOCK_AGENT_CODEX],
+      agents: [MOCK_AGENT_OPENCODE, MOCK_AGENT_CLAUDE, MOCK_AGENT_CODEX, MOCK_AGENT_AMP],
       settingsMap: {
         opencode: makeSettings({ opencodeProvider: 'platform' }),
       },
@@ -387,8 +393,14 @@ test.describe('Unified Agent Cards — Mobile', () => {
     await navigateToAgentConfig(page);
     await page.waitForSelector('[data-testid="agent-card-opencode"]');
     await page.waitForSelector('[data-testid="agent-card-claude-code"]');
+    await page.waitForSelector('[data-testid="agent-card-amp"]');
     await takeScreenshot(page, 'agent-settings-mobile-multiple-agents');
     await assertNoOverflow(page);
+
+    const ampCard = page.getByTestId('agent-card-amp');
+    await expect(ampCard.getByText('Get your API key from Amp')).toBeVisible();
+    await expect(ampCard.getByText('OAuth')).not.toBeVisible();
+    await expect(ampCard.getByText('ChatGPT Subscription')).not.toBeVisible();
   });
 
   test('custom provider: shows base URL and provider name fields', async ({ page }) => {
@@ -662,13 +674,14 @@ test.describe('Unified Agent Cards — Desktop', () => {
 
   test('multiple agents: all cards render without overflow on desktop', async ({ page }) => {
     await setupApiMocks(page, {
-      agents: [MOCK_AGENT_OPENCODE, MOCK_AGENT_CLAUDE, MOCK_AGENT_CODEX],
+      agents: [MOCK_AGENT_OPENCODE, MOCK_AGENT_CLAUDE, MOCK_AGENT_CODEX, MOCK_AGENT_AMP],
       settingsMap: {
         opencode: makeSettings({ opencodeProvider: 'platform' }),
       },
     });
     await navigateToAgentConfig(page);
     await page.waitForSelector('[data-testid="agent-card-opencode"]');
+    await page.waitForSelector('[data-testid="agent-card-amp"]');
     await takeScreenshot(page, 'agent-settings-desktop-multiple-agents');
     await assertNoOverflow(page);
   });
