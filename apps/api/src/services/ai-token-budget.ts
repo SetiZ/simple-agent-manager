@@ -317,3 +317,35 @@ export async function checkMonthlyCostCap(
 
   return { allowed: costUsd < capUsd, costUsd, capUsd };
 }
+
+export type AiUsageGateResult =
+  | { allowed: true }
+  | {
+    allowed: false;
+    reason: 'daily-token-budget';
+    budget: Awaited<ReturnType<typeof checkTokenBudget>>;
+  }
+  | {
+    allowed: false;
+    reason: 'monthly-cost-cap';
+    monthlyCap: Awaited<ReturnType<typeof checkMonthlyCostCap>>;
+  };
+
+/** Check all pre-request AI usage limits shared by proxy routes. */
+export async function checkAiUsageGate(
+  kv: KVNamespace,
+  userId: string,
+  env: Env,
+): Promise<AiUsageGateResult> {
+  const budget = await checkTokenBudget(kv, userId, env);
+  if (!budget.allowed) {
+    return { allowed: false, reason: 'daily-token-budget', budget };
+  }
+
+  const monthlyCap = await checkMonthlyCostCap(kv, userId);
+  if (!monthlyCap.allowed) {
+    return { allowed: false, reason: 'monthly-cost-cap', monthlyCap };
+  }
+
+  return { allowed: true };
+}

@@ -16,6 +16,9 @@ import {
   iterateGatewayLogs,
 } from './ai-gateway-logs';
 
+const DEFAULT_MONTHLY_COST_AGGREGATION_MAX_PAGES = 200;
+const MONTHLY_COST_AGGREGATION_MAX_PAGES_HARD_CAP = 500;
+
 export interface MonthlyCostCronResult {
   enabled: boolean;
   usersUpdated: number;
@@ -46,14 +49,24 @@ export async function runMonthlyCostAggregation(env: Env): Promise<MonthlyCostCr
   let totalEntries = 0;
 
   try {
-    await iterateGatewayLogs(env, gatewayId, startDate, (entry) => {
-      totalEntries++;
-      const userId = entry.metadata?.userId;
-      if (!userId) return;
+    await iterateGatewayLogs(
+      env,
+      gatewayId,
+      startDate,
+      (entry) => {
+        totalEntries++;
+        const userId = entry.metadata?.userId;
+        if (!userId) return;
 
-      const cost = entry.cost || 0;
-      costByUser.set(userId, (costByUser.get(userId) || 0) + cost);
-    });
+        const cost = entry.cost || 0;
+        costByUser.set(userId, (costByUser.get(userId) || 0) + cost);
+      },
+      {
+        defaultMaxPages: DEFAULT_MONTHLY_COST_AGGREGATION_MAX_PAGES,
+        maxPagesHardCap: MONTHLY_COST_AGGREGATION_MAX_PAGES_HARD_CAP,
+        maxPagesEnvValue: env.AI_MONTHLY_COST_AGGREGATION_MAX_PAGES,
+      },
+    );
   } catch (err) {
     log.error('cron.monthly_cost.gateway_error', {
       error: err instanceof Error ? err.message : String(err),
