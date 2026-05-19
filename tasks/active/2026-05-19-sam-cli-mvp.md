@@ -19,18 +19,30 @@ This first slice should be conservative: a thin authenticated API client around 
 
 ## Implementation Checklist
 
-- [ ] Add a new `@simple-agent-manager/cli` workspace package with a `sam` bin entrypoint.
-- [ ] Implement config loading/saving with explicit file permissions and env overrides for API URL and auth cookie.
-- [ ] Implement HTTP client helpers that send the stored cookie, parse JSON errors, and avoid logging secrets.
-- [ ] Implement `sam auth login --api-url <url> --session-cookie <cookie>` and `sam auth status`.
-- [ ] Implement `sam task submit <projectId> <message>` with options for conversation/task mode and common task submit fields.
-- [ ] Implement `sam task status <projectId> <taskId>`.
-- [ ] Implement `sam chat <projectId> <message>` as a conversation-mode submit plus optional follow-up support via `--session <sessionId>`.
-- [ ] Add focused unit tests for command parsing, config safety, request construction, and response formatting.
-- [ ] Document the CLI MVP, auth limitations, and example commands.
-- [ ] Run package and repo quality checks.
-- [ ] Run specialist reviews required by `/do`: task completion, security, docs sync, constitution, and test engineering.
+- [x] Add a new `@simple-agent-manager/cli` workspace package with a `sam` bin entrypoint.
+- [x] Implement config loading/saving with explicit file permissions and env overrides for API URL and auth cookie.
+- [x] Implement HTTP client helpers that send the stored cookie, parse JSON errors, and avoid logging secrets.
+- [x] Implement `sam auth login --api-url <url> --session-cookie <cookie>`, safer `--session-cookie-stdin`, and `sam auth status`.
+- [x] Implement `sam task submit <projectId> <message>` with options for conversation/task mode and common task submit fields.
+- [x] Implement `sam task status <projectId> <taskId>`.
+- [x] Implement `sam chat <projectId> <message>` as a conversation-mode submit plus optional follow-up support via `--session <sessionId>`.
+- [x] Add focused unit tests for command parsing, config safety, request construction, and response formatting.
+- [x] Document the CLI MVP, auth limitations, and example commands.
+- [x] Run package and repo quality checks.
+- [x] Run specialist reviews required by `/do`: task completion, security, docs sync, constitution, and test engineering.
 - [ ] Create/update PR, monitor CI/checks, and stop before merge.
+
+## Specialist Review Results
+
+| Reviewer | Status | Outcome |
+|----------|--------|---------|
+| task-completion-validator | PASS | Checklist and acceptance criteria are covered by the CLI package, docs, focused tests, and local smoke verification. |
+| security-auditor | PASS | Session cookie output is fully redacted; stdin login avoids shell-history exposure; config permissions are restrictive where supported; API errors do not print auth details. |
+| doc-sync-validator | PASS | `docs/cli.md` matches the implemented commands/options and documents session-cookie auth as an MVP bridge, not PAT/device-flow support. |
+| constitution-validator | ADDRESSED | Replaced internal-domain example URLs in help/docs/tests with neutral `https://api.example.com`; no runtime hardcoded API origin, timeout, limit, or deployment identifier. |
+| test-engineer | PASS | Tests cover config storage, env overrides, redaction, stdin auth login, request construction, command routing, output formatting, and API error behavior. |
+
+Note: parallel spawned review agents for these checks timed out and were closed; the skill checklists were then applied manually before PR creation.
 
 ## Acceptance Criteria
 
