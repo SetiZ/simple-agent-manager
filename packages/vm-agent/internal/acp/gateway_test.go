@@ -83,7 +83,7 @@ func TestGetAgentCommandInfo_OAuthToken(t *testing.T) {
 			credentialKind: "api-key",
 			wantCommand:    "acp-amp",
 			wantEnvVar:     "AMP_API_KEY",
-			wantInstallCmd: `curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh && UV_TOOL_DIR=/opt/uv-tools UV_PYTHON_INSTALL_DIR=/opt/uv-python UV_TOOL_BIN_DIR=/usr/local/bin uv tool install acp-amp==0.1.3 --with agent-client-protocol==0.7.1 --with amp-sdk==0.1.2 --with pydantic==2.12.5 --with pydantic-core==2.41.5 --with annotated-types==0.7.0 --with typing-inspection==0.4.2 --with typing-extensions==4.15.0 --python 3.12 --quiet`,
+			wantInstallCmd: `curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh && UV_TOOL_DIR=/opt/uv-tools UV_PYTHON_INSTALL_DIR=/opt/uv-python UV_TOOL_BIN_DIR=/usr/local/bin uv tool install acp-amp==0.1.3 --with agent-client-protocol==0.7.1 --with amp-sdk==0.1.2 --with pydantic==2.12.5 --with pydantic-core==2.41.5 --with annotated-types==0.7.0 --with typing-inspection==0.4.2 --with typing-extensions==4.15.0 --python 3.12 --quiet && npm install -g @sourcegraph/amp`,
 		},
 	}
 
@@ -344,12 +344,12 @@ func TestGetAgentCommandInfoAmp(t *testing.T) {
 	if info.envVarName != "AMP_API_KEY" {
 		t.Fatalf("envVarName=%q, want %q", info.envVarName, "AMP_API_KEY")
 	}
-	wantInstall := `curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh && UV_TOOL_DIR=/opt/uv-tools UV_PYTHON_INSTALL_DIR=/opt/uv-python UV_TOOL_BIN_DIR=/usr/local/bin uv tool install acp-amp==0.1.3 --with agent-client-protocol==0.7.1 --with amp-sdk==0.1.2 --with pydantic==2.12.5 --with pydantic-core==2.41.5 --with annotated-types==0.7.0 --with typing-inspection==0.4.2 --with typing-extensions==4.15.0 --python 3.12 --quiet`
+	wantInstall := `curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh && UV_TOOL_DIR=/opt/uv-tools UV_PYTHON_INSTALL_DIR=/opt/uv-python UV_TOOL_BIN_DIR=/usr/local/bin uv tool install acp-amp==0.1.3 --with agent-client-protocol==0.7.1 --with amp-sdk==0.1.2 --with pydantic==2.12.5 --with pydantic-core==2.41.5 --with annotated-types==0.7.0 --with typing-inspection==0.4.2 --with typing-extensions==4.15.0 --python 3.12 --quiet && npm install -g @sourcegraph/amp`
 	if info.installCmd != wantInstall {
 		t.Fatalf("installCmd=%q, want %q", info.installCmd, wantInstall)
 	}
-	if info.isNpmBased {
-		t.Fatalf("isNpmBased=true, want false (amp uses uv, not npm)")
+	if !info.isNpmBased {
+		t.Fatalf("isNpmBased=false, want true (amp chains npm install for @sourcegraph/amp)")
 	}
 	if len(info.args) != 1 || info.args[0] != "run" {
 		t.Fatalf("args=%v, want [run]", info.args)
@@ -371,6 +371,26 @@ func TestGetAgentCommandInfoAmpIgnoresOAuth(t *testing.T) {
 	}
 	if info.envVarName != "AMP_API_KEY" {
 		t.Fatalf("envVarName=%q, want %q - Amp has no OAuth support", info.envVarName, "AMP_API_KEY")
+	}
+}
+
+func TestAgentInstallScriptAmpIncludesNodeBootstrap(t *testing.T) {
+	t.Parallel()
+
+	info := getAgentCommandInfo("amp", "api-key")
+	script := agentInstallScript(info)
+	// Amp is isNpmBased=true because it chains `npm install -g @sourcegraph/amp`.
+	// agentInstallScript must prepend the Node.js bootstrap preamble so npm is
+	// available in devcontainers that don't ship with Node.js.
+	if !strings.Contains(script, "apt-get install") {
+		t.Fatalf("agentInstallScript did not inject Node.js bootstrap for amp")
+	}
+	// The original install command must still be present after the preamble.
+	if !strings.Contains(script, "uv tool install acp-amp") {
+		t.Fatalf("agentInstallScript lost the uv install portion")
+	}
+	if !strings.Contains(script, "npm install -g @sourcegraph/amp") {
+		t.Fatalf("agentInstallScript lost the npm install portion")
 	}
 }
 
