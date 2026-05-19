@@ -39,6 +39,8 @@ jobs:
               - '.github/workflows/ci.yml'
             cli:
               - 'packages/cli/**'
+              - 'sonar-project.properties'
+              - '.claude/rules/36-cli-quality.md'
               - '.github/workflows/ci.yml'
             devcontainer:
               - '.devcontainer/**'
@@ -54,11 +56,6 @@ jobs:
               - 'packages/ui/**'
               - 'packages/terminal/**'
               - 'packages/acp-client/**'
-              - '.github/workflows/ci.yml'
-            cli:
-              - 'packages/cli/**'
-              - 'sonar-project.properties'
-              - '.claude/rules/36-cli-quality.md'
               - '.github/workflows/ci.yml'
 
   preflight-evidence:
