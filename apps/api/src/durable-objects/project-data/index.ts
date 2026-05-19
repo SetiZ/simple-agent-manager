@@ -30,6 +30,7 @@ import * as missionState from './missions';
 import * as policies from './policies';
 import * as reconciliation from './reconciliation';
 import { parseCountCnt, parseMaxLatest, parseMetaValue } from './row-schemas';
+import * as sessionState from './session-state';
 import * as sessionSummarySync from './session-summary-sync';
 import * as sessions from './sessions';
 import type { Env, SummaryData } from './types';
@@ -65,8 +66,6 @@ export class ProjectData extends DurableObject<Env> {
     this.sql.exec('INSERT OR IGNORE INTO do_meta (key, value) VALUES (?, ?)', 'projectId', projectId);
     this.cachedProjectId = projectId;
   }
-
-  // --- Chat Session CRUD ---
 
   async createSession(workspaceId: string | null, topic: string | null, taskId: string | null = null): Promise<string> {
     const { id, now } = sessions.createSession(this.sql, this.env, workspaceId, topic, taskId);
@@ -165,19 +164,13 @@ export class ProjectData extends DurableObject<Env> {
     return messages.searchMessages(this.sql, query, sessionId, roles, limit);
   }
 
-  // --- Message Materialization ---
-
   materializeSession(sessionId: string): void { materialization.materializeSession(this.sql, sessionId); }
   materializeAllStopped(limit: number = 50) { return materialization.materializeAllStopped(this.sql, limit); }
-
-  // --- Session–Idea Linking ---
 
   async linkSessionIdea(sessionId: string, taskId: string, context: string | null): Promise<void> { ideas.linkSessionIdea(this.sql, sessionId, taskId, context); }
   async unlinkSessionIdea(sessionId: string, taskId: string): Promise<void> { ideas.unlinkSessionIdea(this.sql, sessionId, taskId); }
   getIdeasForSession(sessionId: string) { return ideas.getIdeasForSession(this.sql, sessionId); }
   getSessionsForIdea(taskId: string) { return ideas.getSessionsForIdea(this.sql, taskId); }
-
-  // --- Cached Commands ---
 
   async cacheCommands(agentType: string, cmds: Array<{ name: string; description: string }>): Promise<void> {
     this.ctx.storage.transactionSync(() => {
@@ -188,8 +181,6 @@ export class ProjectData extends DurableObject<Env> {
   async getCachedCommands(agentType?: string): Promise<commands.CachedCommand[]> {
     return commands.getCachedCommands(this.sql, agentType);
   }
-
-  // --- Activity Events ---
 
   async recordActivityEvent(eventType: string, actorType: string, actorId: string | null, workspaceId: string | null, sessionId: string | null, taskId: string | null, payload: string | null): Promise<string> {
     const id = activity.recordActivityEventInternal(this.sql, eventType, actorType, actorId, workspaceId, sessionId, taskId, payload);
@@ -207,12 +198,8 @@ export class ProjectData extends DurableObject<Env> {
     this.broadcastEvent('session.agent_completed', { sessionId, agentCompletedAt: now }, sessionId);
   }
 
-  // --- Workspace Activity Tracking ---
-
   updateTerminalActivity(workspaceId: string, sessionId: string | null): void { activity.updateTerminalActivity(this.sql, workspaceId, sessionId); }
   cleanupWorkspaceActivity(workspaceId: string): void { activity.cleanupWorkspaceActivity(this.sql, workspaceId); }
-
-  // --- Idle Cleanup Schedule ---
 
   async scheduleIdleCleanup(sessionId: string, workspaceId: string, taskId: string | null): Promise<{ cleanupAt: number }> {
     const result = idleCleanup.scheduleIdleCleanup(this.sql, this.env, sessionId, workspaceId, taskId);
@@ -232,8 +219,6 @@ export class ProjectData extends DurableObject<Env> {
   }
 
   async getCleanupAt(sessionId: string): Promise<number | null> { return idleCleanup.getCleanupAt(this.sql, sessionId); }
-
-  // --- Attention Markers ---
 
   async createAttentionMarker(opts: attention.CreateAttentionMarkerOpts): Promise<{ id: string; createdAt: number; expiresAt: number | null }> {
     const result = attention.createAttentionMarker(this.sql, opts);
@@ -259,8 +244,6 @@ export class ProjectData extends DurableObject<Env> {
     return attention.listActiveAttentionMarkers(this.sql, sessionId);
   }
 
-  // --- ACP Session Lifecycle ---
-
   async createAcpSession(opts: { chatSessionId: string; initialPrompt: string | null; agentType: string | null; parentSessionId?: string | null; forkDepth?: number; id?: string }) {
     const result = acpSessions.createAcpSession(this.sql, opts);
     const projectId = this.getProjectId();
@@ -279,15 +262,6 @@ export class ProjectData extends DurableObject<Env> {
     const result = acpSessions.transitionAcpSession(this.sql, sessionId, toStatus, opts, projectId);
     if (toStatus === 'assigned' || toStatus === 'running') await this.scheduleHeartbeatAlarm();
 
-    // Trial bridge — fan `running`/`failed` transitions out as trial.ready /
-    // trial.error SSE events. Non-trial projects short-circuit inside the
-    // helper after a single KV lookup, so overhead on normal traffic is minimal.
-    // Fire-and-forget; wrapped in its own try/catch inside the helper.
-    //
-    // The local ProjectData `Env` type is a narrow subset (D1 + config knobs),
-    // but at runtime Cloudflare injects every binding declared in wrangler.toml
-    // — including KV and TRIAL_EVENT_BUS that the bridge needs. Cast through
-    // unknown so the DO type stays minimal without leaking worker-scope bindings.
     try {
       if (projectId) {
         const { bridgeAcpSessionTransition } = await import('../../services/trial/bridge');
@@ -312,9 +286,24 @@ export class ProjectData extends DurableObject<Env> {
     await this.scheduleHeartbeatAlarm();
   }
 
-  /** Broadcast ephemeral activity signal — no persistence. */
-  async reportActivity(sessionId: string, activity: string): Promise<void> {
+  async reportActivity(sessionId: string, activity: string, extra?: {
+    promptStartedAt?: number | null;
+    agentType?: string | null;
+    restartCount?: number | null;
+    statusError?: string | null;
+  }): Promise<void> {
+    sessionState.upsertActivityState(this.sql, sessionId, {
+      activity,
+      promptStartedAt: extra?.promptStartedAt,
+      agentType: extra?.agentType,
+      restartCount: extra?.restartCount,
+      statusError: extra?.statusError,
+    });
     this.broadcastEvent('session.activity', { sessionId, activity }, sessionId);
+  }
+
+  getSessionState(sessionId: string) {
+    return sessionState.getSessionState(this.sql, sessionId);
   }
 
   async forkAcpSession(sessionId: string, contextSummary: string) {
@@ -330,8 +319,6 @@ export class ProjectData extends DurableObject<Env> {
     if (updated > 0) await this.scheduleHeartbeatAlarm();
     return updated;
   }
-
-  // --- Summary ---
 
   async getSummary(): Promise<SummaryData> {
     const activeCountRow = this.sql.exec("SELECT COUNT(*) as cnt FROM chat_sessions WHERE status = 'active'").toArray()[0];
@@ -420,6 +407,16 @@ export class ProjectData extends DurableObject<Env> {
       this.env,
       (sessionId, errorMessage) => this.failSession(sessionId, errorMessage),
     );
+
+    // Session state staleness: auto-heal stuck "prompting" states
+    try {
+      const healedSessionIds = sessionState.reconcileStaleActivity(this.sql);
+      for (const healedId of healedSessionIds) {
+        this.broadcastEvent('session.activity', { sessionId: healedId, activity: 'idle' }, healedId);
+      }
+    } catch (err) {
+      log.error('alarm.stale_activity_reconciliation_failed', { error: err instanceof Error ? err.message : String(err) });
+    }
 
     // Mailbox delivery sweep: expire stale messages and re-queue unacked ones
     const ackTimeoutMs = parseInt(this.env.MAILBOX_ACK_TIMEOUT_MS ?? '300000', 10);
