@@ -36,7 +36,7 @@ import {
   isAnthropicModel,
   verifyAIProxyAuth,
 } from '../services/ai-proxy-shared';
-import { checkTokenBudget } from '../services/ai-token-budget';
+import { checkMonthlyCostCap, checkTokenBudget } from '../services/ai-token-budget';
 import {
   attachUpstreamTokenUsageAccounting,
   estimateInputTokensFromMessages,
@@ -146,6 +146,12 @@ aiProxyAnthropicRoutes.post('/messages', async (c) => {
   const budgetCheck = await checkTokenBudget(c.env.KV, userId, c.env);
   if (!budgetCheck.allowed) {
     return anthropicError('Daily token budget exceeded. Resets at midnight UTC.', 'rate_limit_error', 429);
+  }
+
+  // --- Check monthly cost cap ---
+  const monthlyCap = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap.allowed) {
+    return anthropicError('Monthly cost cap exceeded. Adjust your cap in Settings > Usage.', 'rate_limit_error', 429);
   }
 
   // --- Resolve upstream auth (Unified Billing or platform key) ---
@@ -349,6 +355,12 @@ aiProxyAnthropicRoutes.post('/messages/count_tokens', async (c) => {
   const budgetCheck = await checkTokenBudget(c.env.KV, userId, c.env);
   if (!budgetCheck.allowed) {
     return anthropicError('Daily token budget exceeded. Resets at midnight UTC.', 'rate_limit_error', 429);
+  }
+
+  // --- Check monthly cost cap ---
+  const monthlyCap2 = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap2.allowed) {
+    return anthropicError('Monthly cost cap exceeded. Adjust your cap in Settings > Usage.', 'rate_limit_error', 429);
   }
 
   // --- Resolve upstream auth (Unified Billing or platform key) ---

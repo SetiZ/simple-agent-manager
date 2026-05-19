@@ -46,7 +46,7 @@ import {
   isAnthropicModel,
   verifyAIProxyAuth,
 } from '../services/ai-proxy-shared';
-import { checkTokenBudget } from '../services/ai-token-budget';
+import { checkMonthlyCostCap, checkTokenBudget } from '../services/ai-token-budget';
 import { attachTokenUsageAccounting } from '../services/ai-token-usage-accounting';
 import { getPlatformAgentCredential } from '../services/platform-credentials';
 
@@ -448,6 +448,18 @@ aiProxyRoutes.post('/chat/completions', async (c) => {
           inputTokens: { used: budgetCheck.usage.inputTokens, limit: budgetCheck.inputLimit },
           outputTokens: { used: budgetCheck.usage.outputTokens, limit: budgetCheck.outputLimit },
         },
+      },
+    }, 429);
+  }
+
+  // --- Check monthly cost cap (KV-cached, written by hourly cron) ---
+  const monthlyCap = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap.allowed) {
+    return c.json({
+      error: {
+        message: 'Monthly cost cap exceeded. Adjust your cap in Settings > Usage.',
+        type: 'rate_limit_error',
+        monthlyCost: { used: monthlyCap.costUsd, cap: monthlyCap.capUsd },
       },
     }, 429);
   }

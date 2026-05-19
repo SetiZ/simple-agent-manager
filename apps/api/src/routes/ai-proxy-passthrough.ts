@@ -35,7 +35,7 @@ import {
   isAnthropicModel,
   verifyAIProxyAuth,
 } from '../services/ai-proxy-shared';
-import { checkTokenBudget } from '../services/ai-token-budget';
+import { checkMonthlyCostCap, checkTokenBudget } from '../services/ai-token-budget';
 import {
   attachUpstreamTokenUsageAccounting,
   estimateInputTokensFromMessages,
@@ -153,6 +153,12 @@ aiProxyPassthroughRoutes.post('/:wstoken/anthropic/v1/messages', async (c) => {
   const budgetCheck = await checkTokenBudget(c.env.KV, userId, c.env);
   if (!budgetCheck.allowed) {
     return anthropicError('Daily token budget exceeded. Resets at midnight UTC.', 'rate_limit_error', 429);
+  }
+
+  // --- Check monthly cost cap ---
+  const monthlyCap = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap.allowed) {
+    return anthropicError('Monthly cost cap exceeded. Adjust your cap in Settings > Usage.', 'rate_limit_error', 429);
   }
 
   // --- Extract user's credential from request headers (passthrough) ---
@@ -299,6 +305,12 @@ aiProxyPassthroughRoutes.post('/:wstoken/anthropic/v1/messages/count_tokens', as
     return anthropicError('Daily token budget exceeded.', 'rate_limit_error', 429);
   }
 
+  // --- Check monthly cost cap ---
+  const monthlyCap = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap.allowed) {
+    return anthropicError('Monthly cost cap exceeded. Adjust your cap in Settings > Usage.', 'rate_limit_error', 429);
+  }
+
   const userApiKey = c.req.header('x-api-key');
   const userAuthHeader = c.req.header('Authorization');
   if (!userApiKey && !userAuthHeader) {
@@ -403,6 +415,12 @@ aiProxyPassthroughRoutes.post('/:wstoken/openai/v1/chat/completions', async (c) 
   const budgetCheck = await checkTokenBudget(c.env.KV, userId, c.env);
   if (!budgetCheck.allowed) {
     return openaiError('Daily token budget exceeded.', 'rate_limit_error', 429);
+  }
+
+  // --- Check monthly cost cap ---
+  const monthlyCap = await checkMonthlyCostCap(c.env.KV, userId);
+  if (!monthlyCap.allowed) {
+    return openaiError('Monthly cost cap exceeded. Adjust your cap in Settings > Usage.', 'rate_limit_error', 429);
   }
 
   // Extract user's credential from Authorization header (passthrough)

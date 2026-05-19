@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mockVerifyAIProxyAuth = vi.fn();
 const mockCheckRateLimit = vi.fn();
 const mockCheckTokenBudget = vi.fn();
+const mockCheckMonthlyCostCap = vi.fn();
 const mockIncrementTokenUsage = vi.fn();
 const mockResolveUpstreamAuth = vi.fn();
 const mockFetch = vi.fn();
@@ -39,6 +40,7 @@ vi.mock('../../../src/middleware/rate-limit', () => ({
 }));
 vi.mock('../../../src/services/ai-token-budget', () => ({
   checkTokenBudget: (...args: unknown[]) => mockCheckTokenBudget(...args),
+  checkMonthlyCostCap: (...args: unknown[]) => mockCheckMonthlyCostCap(...args),
   incrementTokenUsage: (...args: unknown[]) => mockIncrementTokenUsage(...args),
 }));
 vi.mock('../../../src/services/ai-billing', () => ({
@@ -133,6 +135,7 @@ function expectUsageIncrement(inputTokens: number, outputTokens: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCheckMonthlyCostCap.mockResolvedValue({ allowed: true, costUsd: 0, capUsd: null });
 });
 
 describe('OpenAI-compatible AI proxy token accounting', () => {

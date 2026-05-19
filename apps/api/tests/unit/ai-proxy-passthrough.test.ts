@@ -11,6 +11,7 @@ import { beforeEach,describe, expect, it, vi } from 'vitest';
 const mockVerifyAIProxyAuth = vi.fn();
 const mockCheckRateLimit = vi.fn();
 const mockCheckTokenBudget = vi.fn();
+const mockCheckMonthlyCostCap = vi.fn();
 const mockIncrementTokenUsage = vi.fn();
 
 vi.mock('drizzle-orm/d1', () => ({
@@ -43,6 +44,7 @@ vi.mock('../../src/middleware/rate-limit', () => ({
 
 vi.mock('../../src/services/ai-token-budget', () => ({
   checkTokenBudget: (...args: unknown[]) => mockCheckTokenBudget(...args),
+  checkMonthlyCostCap: (...args: unknown[]) => mockCheckMonthlyCostCap(...args),
   incrementTokenUsage: (...args: unknown[]) => mockIncrementTokenUsage(...args),
 }));
 
@@ -93,6 +95,8 @@ function postJson(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: monthly cost cap check always allows (tests override when needed)
+  mockCheckMonthlyCostCap.mockResolvedValue({ allowed: true, costUsd: 0, capUsd: null });
 });
 
 describe('AI Proxy Passthrough Routes', () => {
