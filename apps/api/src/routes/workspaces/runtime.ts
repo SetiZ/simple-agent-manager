@@ -79,14 +79,33 @@ runtimeRoutes.post('/:id/agent-key', jsonValidator(AgentTypeBodySchema), async (
   // AI proxy: when enabled and agent is eligible, return proxy config when the
   // credential can be forwarded to the upstream provider.
   // Two modes:
-  // - No user credential → platform proxy (callback-token auth, existing behavior)
+  // - Claude/Codex with no user credential + providerMode='sam' → platform proxy (callback-token auth)
+  // - OpenCode with no user credential → existing platform proxy fallback
   // - User has upstream-compatible credential → passthrough proxy (user credential
   //   forwarded via auth headers, wstoken in URL path for analytics/rate-limiting)
+  // Note: Claude/Codex platform proxy fallback requires explicit providerMode='sam' selection.
+  // Without it, users with no credential get a 404 (agent not configured).
   const aiProxyEnabled = (c.env.AI_PROXY_ENABLED ?? 'true') !== 'false';
   if (PROXY_ELIGIBLE_AGENTS.has(body.agentType) && aiProxyEnabled) {
     const baseDomain = c.env.BASE_DOMAIN;
     const isClaudeCode = body.agentType === 'claude-code';
     const isCodex = body.agentType === 'openai-codex';
+    let explicitProviderMode: string | null | undefined;
+    const getExplicitProviderMode = async (): Promise<string | null> => {
+      if (explicitProviderMode !== undefined) return explicitProviderMode;
+      const settingsRows = await db
+        .select({ providerMode: schema.agentSettings.providerMode })
+        .from(schema.agentSettings)
+        .where(
+          and(
+            eq(schema.agentSettings.userId, workspace.userId),
+            eq(schema.agentSettings.agentType, body.agentType)
+          )
+        )
+        .limit(1);
+      explicitProviderMode = settingsRows[0]?.providerMode ?? null;
+      return explicitProviderMode;
+    };
 
     // Resolve default model: KV (admin-set) > env var > shared constant
     let defaultModel: string;
@@ -103,6 +122,12 @@ runtimeRoutes.post('/:id/agent-key', jsonValidator(AgentTypeBodySchema), async (
           if (parsed.defaultModel) defaultModel = parsed.defaultModel;
         }
       } catch { /* KV unavailable or corrupt data — use env/default */ }
+    }
+
+    // Claude Code/Codex explicit SAM mode must route through the SAM proxy,
+    // not through legacy platform agent credentials as user-style passthrough.
+    if ((isClaudeCode || isCodex) && credentialData?.credentialSource === 'platform') {
+      credentialData = null;
     }
 
     if (credentialData && !(isClaudeCode && credentialData.credentialKind === 'oauth-token')) {
@@ -167,7 +192,20 @@ runtimeRoutes.post('/:id/agent-key', jsonValidator(AgentTypeBodySchema), async (
       });
     }
 
-    // No user credential — platform proxy mode (existing behavior).
+    // Claude Code and Codex require an explicit SAM provider selection before
+    // using platform proxy. OpenCode keeps its existing platform fallback path.
+    if (isClaudeCode || isCodex) {
+      const providerMode = await getExplicitProviderMode();
+
+      if (providerMode !== 'sam') {
+        log.info('agent_key.no_credential_no_sam_provider', {
+          workspaceId, userId: workspace.userId, agentType: body.agentType, providerMode,
+        });
+        throw errors.notFound('Agent credential');
+      }
+    }
+
+    // Activate platform proxy.
     // Auth via callback token in headers.
     let proxyBaseUrl: string;
     let proxyProvider: string;
@@ -182,7 +220,7 @@ runtimeRoutes.post('/:id/agent-key', jsonValidator(AgentTypeBodySchema), async (
       proxyProvider = 'openai-compatible';
     }
 
-    log.info('agent_key.ai_proxy_fallback', { workspaceId, userId: workspace.userId, proxyBaseUrl, agentType: body.agentType });
+    log.info('agent_key.ai_proxy_sam_provider', { workspaceId, userId: workspace.userId, proxyBaseUrl, agentType: body.agentType });
 
     // Track credential source on associated task
     const taskRows = await db

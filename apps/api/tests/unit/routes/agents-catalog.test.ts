@@ -24,23 +24,27 @@ interface CatalogDbState {
   agentCredentials?: QueryResult;
   scalewayCloudCredentials?: QueryResult;
   platformCloudCredentials?: QueryResult;
+  agentProviderModes?: QueryResult;
 }
 
 function makeCatalogDb(state: CatalogDbState) {
   let selectCount = 0;
+  const selectResults = [
+    state.agentCredentials ?? [],
+    state.scalewayCloudCredentials ?? [],
+    state.platformCloudCredentials ?? [],
+    state.agentProviderModes ?? [],
+  ];
 
   return {
     select: vi.fn(() => {
       selectCount += 1;
-      const result =
-        selectCount === 1
-          ? state.agentCredentials ?? []
-          : selectCount === 2
-            ? state.scalewayCloudCredentials ?? []
-            : state.platformCloudCredentials ?? [];
+      const result = selectResults[selectCount - 1] ?? [];
       const builder = {
         from: vi.fn(() => builder),
-        where: vi.fn(() => (selectCount === 1 ? Promise.resolve(result) : builder)),
+        where: vi.fn(() => (
+          selectCount === 1 || selectCount >= 4 ? Promise.resolve(result) : builder
+        )),
         limit: vi.fn(() => Promise.resolve(result)),
       };
       return builder;

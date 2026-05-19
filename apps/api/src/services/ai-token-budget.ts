@@ -7,8 +7,9 @@
  * write updates are not atomic under concurrent requests.
  */
 
-import type { UserAiBudgetSettings } from '@simple-agent-manager/shared';
+import type { AdminAiAllowance, UserAiBudgetSettings } from '@simple-agent-manager/shared';
 import {
+  AI_ADMIN_ALLOWANCE_KV_PREFIX,
   AI_BUDGET_SETTINGS_KV_PREFIX,
   AI_MONTHLY_COST_CACHE_KV_PREFIX,
   DEFAULT_AI_PROXY_DAILY_INPUT_TOKEN_LIMIT,
@@ -35,6 +36,13 @@ interface AiTokenBudgetCounterStub extends DurableObjectStub {
   increment(dateKey: string, inputTokens: number, outputTokens: number): Promise<TokenBudget>;
 }
 
+export interface AiBudgetLimits {
+  maxDailyTokens: number;
+  minDailyTokens: number;
+  maxMonthlyCostCapUsd: number;
+  minMonthlyCostCapUsd: number;
+}
+
 function buildBudgetDateKey(date?: Date): string {
   const d = date ?? new Date();
   return d.toISOString().slice(0, 10);
@@ -53,6 +61,19 @@ function getBudgetCounter(env: Env | undefined, userId: string) {
   return env.AI_TOKEN_BUDGET_COUNTER.get(
     env.AI_TOKEN_BUDGET_COUNTER.idFromName(userId),
   ) as AiTokenBudgetCounterStub;
+}
+
+export function getAiBudgetLimits(env: Env): AiBudgetLimits {
+  return {
+    maxDailyTokens: Number.parseInt(env.AI_USAGE_MAX_DAILY_TOKEN_LIMIT || '', 10)
+      || DEFAULT_AI_USAGE_MAX_DAILY_TOKEN_LIMIT,
+    minDailyTokens: Number.parseInt(env.AI_USAGE_MIN_DAILY_TOKEN_LIMIT || '', 10)
+      || DEFAULT_AI_USAGE_MIN_DAILY_TOKEN_LIMIT,
+    maxMonthlyCostCapUsd: Number(env.AI_USAGE_MAX_MONTHLY_COST_CAP_USD)
+      || DEFAULT_AI_USAGE_MAX_MONTHLY_COST_CAP_USD,
+    minMonthlyCostCapUsd: Number(env.AI_USAGE_MIN_MONTHLY_COST_CAP_USD)
+      || DEFAULT_AI_USAGE_MIN_MONTHLY_COST_CAP_USD,
+  };
 }
 
 /**
@@ -111,20 +132,37 @@ export async function deleteUserBudgetSettings(
   await kv.delete(key);
 }
 
-/** Validate and normalize budget update request. Returns validated settings or throws. */
+/** Get a user's admin-managed AI allowance ceiling from KV. */
+export async function getAdminAiAllowance(
+  kv: KVNamespace,
+  userId: string,
+): Promise<AdminAiAllowance | null> {
+  return kv.get<AdminAiAllowance>(`${AI_ADMIN_ALLOWANCE_KV_PREFIX}:${userId}`, 'json');
+}
+
+/**
+ * Validate and normalize budget update request. Returns validated settings or throws.
+ *
+ * When `adminAllowance` is provided, the user's limits are capped at the
+ * admin-set ceiling instead of the platform maximum.
+ */
 export function validateBudgetUpdate(
   body: unknown,
   env: Env,
+  adminAllowance?: AdminAiAllowance | null,
 ): UserAiBudgetSettings {
   const request = expectJsonRecord(body, 'usage.ai.budget');
-  const maxDailyTokens = parseInt(env.AI_USAGE_MAX_DAILY_TOKEN_LIMIT || '', 10)
-    || DEFAULT_AI_USAGE_MAX_DAILY_TOKEN_LIMIT;
-  const minDailyTokens = parseInt(env.AI_USAGE_MIN_DAILY_TOKEN_LIMIT || '', 10)
-    || DEFAULT_AI_USAGE_MIN_DAILY_TOKEN_LIMIT;
-  const maxMonthlyCap = parseFloat(env.AI_USAGE_MAX_MONTHLY_COST_CAP_USD || '')
-    || DEFAULT_AI_USAGE_MAX_MONTHLY_COST_CAP_USD;
-  const minMonthlyCap = parseFloat(env.AI_USAGE_MIN_MONTHLY_COST_CAP_USD || '')
-    || DEFAULT_AI_USAGE_MIN_MONTHLY_COST_CAP_USD;
+  const {
+    maxDailyTokens: platformMaxDailyTokens,
+    minDailyTokens,
+    maxMonthlyCostCapUsd: platformMaxMonthlyCap,
+    minMonthlyCostCapUsd: minMonthlyCap,
+  } = getAiBudgetLimits(env);
+
+  // Admin ceilings take precedence over platform maximums when set
+  const maxDailyInputTokens = adminAllowance?.maxDailyInputTokens ?? platformMaxDailyTokens;
+  const maxDailyOutputTokens = adminAllowance?.maxDailyOutputTokens ?? platformMaxDailyTokens;
+  const maxMonthlyCap = adminAllowance?.maxMonthlyCostCapUsd ?? platformMaxMonthlyCap;
 
   const settings: UserAiBudgetSettings = {
     dailyInputTokenLimit: null,
@@ -135,8 +173,8 @@ export function validateBudgetUpdate(
 
   if (request.dailyInputTokenLimit !== undefined) {
     if (request.dailyInputTokenLimit !== null) {
-      if (typeof request.dailyInputTokenLimit !== 'number' || request.dailyInputTokenLimit < minDailyTokens || request.dailyInputTokenLimit > maxDailyTokens) {
-        throw new Error(`dailyInputTokenLimit must be between ${minDailyTokens} and ${maxDailyTokens}`);
+      if (typeof request.dailyInputTokenLimit !== 'number' || request.dailyInputTokenLimit < minDailyTokens || request.dailyInputTokenLimit > maxDailyInputTokens) {
+        throw new Error(`dailyInputTokenLimit must be between ${minDailyTokens} and ${maxDailyInputTokens}`);
       }
       settings.dailyInputTokenLimit = Math.floor(request.dailyInputTokenLimit);
     }
@@ -144,8 +182,8 @@ export function validateBudgetUpdate(
 
   if (request.dailyOutputTokenLimit !== undefined) {
     if (request.dailyOutputTokenLimit !== null) {
-      if (typeof request.dailyOutputTokenLimit !== 'number' || request.dailyOutputTokenLimit < minDailyTokens || request.dailyOutputTokenLimit > maxDailyTokens) {
-        throw new Error(`dailyOutputTokenLimit must be between ${minDailyTokens} and ${maxDailyTokens}`);
+      if (typeof request.dailyOutputTokenLimit !== 'number' || request.dailyOutputTokenLimit < minDailyTokens || request.dailyOutputTokenLimit > maxDailyOutputTokens) {
+        throw new Error(`dailyOutputTokenLimit must be between ${minDailyTokens} and ${maxDailyOutputTokens}`);
       }
       settings.dailyOutputTokenLimit = Math.floor(request.dailyOutputTokenLimit);
     }
@@ -310,7 +348,9 @@ export async function checkMonthlyCostCap(
 
   const costUsd = await getCachedMonthlyCost(kv, userId);
 
-  // No cache yet — fail-open (cron hasn't run yet for this user)
+  // No cache yet — fail-open until the hourly cron populates usage data.
+  // Window is at most 60 minutes after SAM mode activation or cap change.
+  // Acceptable risk: daily token budget (checked separately) still applies.
   if (costUsd === null) {
     return { allowed: true, costUsd: 0, capUsd };
   }

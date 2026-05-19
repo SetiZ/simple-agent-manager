@@ -1,4 +1,4 @@
-import type { AgentInfo } from '@simple-agent-manager/shared';
+import type { AgentInfo, AgentProviderMode } from '@simple-agent-manager/shared';
 import { AGENT_CATALOG } from '@simple-agent-manager/shared';
 import { and,eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/d1';
@@ -11,6 +11,7 @@ import { getUserId,requireApproved, requireAuth } from '../middleware/auth';
 import { getPlatformOpencodeAvailability, type PlatformOpencodeAvailability } from '../services/platform-trial';
 
 const agentsCatalogRoutes = new Hono<{ Bindings: Env }>();
+type AgentFallbackCredentialSource = 'scaleway-cloud' | 'platform-opencode' | 'platform-sam' | null;
 
 // All routes require authentication
 agentsCatalogRoutes.use('*', requireAuth(), requireApproved());
@@ -36,6 +37,17 @@ async function getCatalogPlatformOpencodeAvailability(
   }
 }
 
+function resolveFallbackCredentialSource(
+  usesScalewayFallback: boolean,
+  usesPlatformFallback: boolean,
+  usesSamProvider: boolean,
+): AgentFallbackCredentialSource {
+  if (usesScalewayFallback) return 'scaleway-cloud';
+  if (usesPlatformFallback) return 'platform-opencode';
+  if (usesSamProvider) return 'platform-sam';
+  return null;
+}
+
 /**
  * GET /api/agents - List supported agents with user's connection status
  */
@@ -43,8 +55,8 @@ agentsCatalogRoutes.get('/', async (c) => {
   const userId = getUserId(c);
   const db = drizzle(c.env.DATABASE, { schema });
 
-  // Fetch user credentials and platform availability in parallel.
-  const [agentCredentials, scalewayCloudCreds, platformOpencode] = await Promise.all([
+  // Fetch user credentials, provider modes, and platform availability in parallel.
+  const [agentCredentials, scalewayCloudCreds, platformOpencode, agentProviderModes] = await Promise.all([
     db
       .select({ agentType: schema.credentials.agentType })
       .from(schema.credentials)
@@ -66,12 +78,23 @@ agentsCatalogRoutes.get('/', async (c) => {
       )
       .limit(1),
     getCatalogPlatformOpencodeAvailability(db, c.env),
+    db
+      .select({ agentType: schema.agentSettings.agentType, providerMode: schema.agentSettings.providerMode })
+      .from(schema.agentSettings)
+      .where(eq(schema.agentSettings.userId, userId)),
   ]);
 
   const configuredAgents = new Set(
     agentCredentials.map((c) => c.agentType).filter(Boolean)
   );
   const hasScalewayCloud = scalewayCloudCreds.length > 0;
+
+  // Build a map of agentType -> providerMode for SAM provider checks.
+  const providerModeMap = new Map<string, AgentProviderMode | null>(
+    agentProviderModes.map((s) => [s.agentType, s.providerMode as AgentProviderMode | null])
+  );
+
+  const aiProxyEnabled = (c.env.AI_PROXY_ENABLED ?? 'true') !== 'false';
 
   const agents: AgentInfo[] = AGENT_CATALOG.map((agent) => {
     const hasDedicatedKey = configuredAgents.has(agent.id);
@@ -82,16 +105,26 @@ agentsCatalogRoutes.get('/', async (c) => {
       !hasDedicatedKey &&
       !usesScalewayFallback &&
       platformOpencode.available;
+    // Claude Code / Codex: mark as configured if providerMode='sam' and proxy is enabled.
+    const usesSamProvider =
+      !hasDedicatedKey &&
+      !usesScalewayFallback &&
+      !usesPlatformFallback &&
+      aiProxyEnabled &&
+      (agent.id === 'claude-code' || agent.id === 'openai-codex') &&
+      providerModeMap.get(agent.id) === 'sam';
     return {
       id: agent.id,
       name: agent.name,
       description: agent.description,
       supportsAcp: agent.supportsAcp,
-      configured: hasDedicatedKey || usesScalewayFallback || usesPlatformFallback,
+      configured: hasDedicatedKey || usesScalewayFallback || usesPlatformFallback || usesSamProvider,
       credentialHelpUrl: agent.credentialHelpUrl,
-      fallbackCredentialSource: usesScalewayFallback
-        ? 'scaleway-cloud' as const
-        : usesPlatformFallback ? 'platform-opencode' as const : null,
+      fallbackCredentialSource: resolveFallbackCredentialSource(
+        usesScalewayFallback,
+        usesPlatformFallback,
+        usesSamProvider,
+      ),
     };
   });
 
