@@ -7,6 +7,12 @@ interface StepHowItWorksProps {
   trialAvailable: boolean;
 }
 
+interface FlowStepProps {
+  number: string;
+  title: string;
+  description: string;
+}
+
 export function StepHowItWorks({
   onComplete,
   onCreateProject,
@@ -122,15 +128,7 @@ export function StepHowItWorks({
   );
 }
 
-function FlowStep({
-  number,
-  title,
-  description,
-}: {
-  number: string;
-  title: string;
-  description: string;
-}) {
+function FlowStep({ number, title, description }: Readonly<FlowStepProps>) {
   return (
     <div className="flex items-start gap-3 p-3 border border-border-default rounded-md bg-surface">
       <div className="shrink-0 w-6 h-6 rounded-full bg-accent text-fg-on-accent text-xs font-bold flex items-center justify-center">

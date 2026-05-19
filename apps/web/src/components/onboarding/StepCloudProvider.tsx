@@ -1,9 +1,10 @@
 import type { CreateCredentialRequest } from '@simple-agent-manager/shared';
 import { PROVIDER_HELP, PROVIDER_LABELS } from '@simple-agent-manager/shared';
-import { Alert, Button, Input } from '@simple-agent-manager/ui';
+import { Alert, Input } from '@simple-agent-manager/ui';
 import { useRef, useState } from 'react';
 
 import { createCredential, validateCredential } from '../../lib/api';
+import { CompleteState, OptionCard, StepActions } from './StepShared';
 
 type CloudProvider = 'hetzner' | 'scaleway';
 
@@ -58,22 +59,11 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
 
   if (isComplete) {
     return (
-      <div className="text-center py-6">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-success/10 mb-3">
-          <span className="text-success text-xl">{'\u2713'}</span>
-        </div>
-        <p className="sam-type-body text-fg-primary font-medium m-0 mb-1">
-          Cloud provider connected
-        </p>
-        <p className="sam-type-caption text-fg-muted m-0">
-          You can manage your credentials in Settings.
-        </p>
-        <div className="mt-4">
-          <Button variant="primary" size="md" onClick={onComplete}>
-            Continue
-          </Button>
-        </div>
-      </div>
+      <CompleteState
+        title="Cloud provider connected"
+        description="You can manage your credentials in Settings."
+        onContinue={onComplete}
+      />
     );
   }
 
@@ -157,24 +147,18 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
       {/* Provider selection */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
         {PROVIDERS.map((provider) => (
-          <button
+          <OptionCard
             key={provider.id}
-            type="button"
-            onClick={() => {
+            name={provider.name}
+            description={provider.description}
+            isSelected={selectedProvider === provider.id}
+            onSelect={() => {
               setSelectedProvider(provider.id);
               setError(null);
               setValidatedKey(null);
               setValidationMessage(null);
             }}
-            className={`p-3 rounded-md border text-left transition-colors cursor-pointer bg-surface ${
-              selectedProvider === provider.id
-                ? 'border-accent ring-1 ring-accent'
-                : 'border-border-default hover:border-fg-muted'
-            }`}
-          >
-            <span className="block font-medium text-sm text-fg-primary">{provider.name}</span>
-            <span className="block text-xs text-fg-muted mt-0.5">{provider.description}</span>
-          </button>
+          />
         ))}
       </div>
 
@@ -239,34 +223,15 @@ export function StepCloudProvider({ onComplete, onSkip, isComplete }: StepCloudP
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="self-start text-sm text-fg-muted hover:text-fg-primary bg-transparent border-none cursor-pointer p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          Skip this step
-        </button>
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={handleValidate}
-            disabled={!isValid || validating || saving}
-          >
-            {getValidateButtonLabel(validating, isValidated)}
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={handleSave}
-            disabled={!isValid || saving || validating || !isValidated}
-          >
-            {saving ? 'Saving...' : 'Connect'}
-          </Button>
-        </div>
-      </div>
+      <StepActions
+        onSkip={onSkip}
+        onValidate={handleValidate}
+        onSave={handleSave}
+        testDisabled={!isValid || validating || saving}
+        connectDisabled={!isValid || saving || validating || !isValidated}
+        testLabel={getValidateButtonLabel(validating, isValidated)}
+        saveLabel={saving ? 'Saving...' : 'Connect'}
+      />
     </div>
   );
 }

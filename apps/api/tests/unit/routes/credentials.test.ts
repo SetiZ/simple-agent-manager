@@ -150,6 +150,7 @@ describe('Credentials Routes - OAuth Support', () => {
     });
 
     it('validates OAuth credentials by format only', async () => {
+      const oauthToken = `${makeFakeSecret('sk-ant-oat01')}abcdefghijklmnop`;
       const res = await app.request(
         '/api/credentials/agent/validate',
         {
@@ -158,7 +159,7 @@ describe('Credentials Routes - OAuth Support', () => {
           body: JSON.stringify({
             agentType: 'claude-code',
             credentialKind: 'oauth-token',
-            credential: 'sk-ant-oat01-1234567890abcdefghijklmnopqrstuvwxyz',
+            credential: oauthToken,
           }),
         },
         makeTestEnv()

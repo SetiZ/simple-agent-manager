@@ -3,11 +3,12 @@ import { expect, type Page, type Route } from '@playwright/test';
 interface MockUserOptions {
   email: string;
   name: string;
+  role?: string;
   sessionId: string;
   userId: string;
 }
 
-export function makeMockUser({ email, name, sessionId, userId }: MockUserOptions) {
+export function makeMockUser({ email, name, role = 'user', sessionId, userId }: MockUserOptions) {
   const timestamp = '2026-05-19T00:00:00Z';
   return {
     user: {
@@ -15,7 +16,7 @@ export function makeMockUser({ email, name, sessionId, userId }: MockUserOptions
       email,
       name,
       image: null,
-      role: 'user',
+      role,
       status: 'active',
       emailVerified: true,
       createdAt: timestamp,

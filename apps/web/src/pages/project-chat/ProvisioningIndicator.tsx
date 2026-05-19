@@ -11,6 +11,12 @@ interface ProvisioningStage {
   steps: TaskExecutionStep[];
 }
 
+interface ProvisioningIndicatorProps {
+  state: ProvisioningState;
+  bootLogCount: number;
+  onViewLogs: () => void;
+}
+
 const PROVISIONING_STAGES: ProvisioningStage[] = [
   { label: 'Provisioning VM', steps: ['node_selection', 'node_provisioning', 'node_agent_ready'] },
   { label: 'Cloning repository', steps: ['workspace_creation'] },
@@ -52,11 +58,7 @@ export function ProvisioningIndicator({
   state,
   bootLogCount,
   onViewLogs,
-}: {
-  state: ProvisioningState;
-  bootLogCount: number;
-  onViewLogs: () => void;
-}) {
+}: Readonly<ProvisioningIndicatorProps>) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {

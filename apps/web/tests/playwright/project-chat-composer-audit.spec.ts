@@ -1,26 +1,16 @@
 import { expect, type Page, type Route, test } from '@playwright/test';
 
-const MOCK_USER = {
-  user: {
-    id: 'user-test-1',
-    email: 'test@example.com',
-    name: 'Test User',
-    image: null,
-    role: 'superadmin',
-    status: 'active',
-    emailVerified: true,
-    createdAt: '2026-05-18T00:00:00Z',
-    updatedAt: '2026-05-18T00:00:00Z',
-  },
-  session: {
-    id: 'session-test-1',
-    userId: 'user-test-1',
-    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    token: 'mock-token',
-    createdAt: '2026-05-18T00:00:00Z',
-    updatedAt: '2026-05-18T00:00:00Z',
-  },
-};
+import { assertNoOverflow, makeMockUser, screenshot } from './audit-helpers';
+
+type AuditMode = 'new' | 'active' | 'provisioning';
+
+const MOCK_USER = makeMockUser({
+  email: 'test@example.com',
+  name: 'Test User',
+  role: 'superadmin',
+  sessionId: 'session-test-1',
+  userId: 'user-test-1',
+});
 
 const MOCK_PROJECT = {
   id: 'proj-composer-1',
@@ -144,13 +134,13 @@ const PROVISIONING_SESSION = {
   },
 };
 
-function getSessionsForMode(mode: 'new' | 'active' | 'provisioning') {
+function getSessionsForMode(mode: AuditMode) {
   if (mode === 'active') return [ACTIVE_SESSION];
   if (mode === 'provisioning') return [PROVISIONING_SESSION];
   return [];
 }
 
-function getSessionForMode(mode: 'new' | 'active' | 'provisioning') {
+function getSessionForMode(mode: AuditMode) {
   if (mode === 'provisioning') return PROVISIONING_SESSION;
   return ACTIVE_SESSION;
 }
@@ -171,21 +161,6 @@ function makeMessage(index: number) {
   };
 }
 
-async function screenshot(page: Page, name: string) {
-  await page.waitForTimeout(600);
-  await page.screenshot({
-    path: `../../.codex/tmp/playwright-screenshots/${name}.png`,
-    fullPage: true,
-  });
-}
-
-async function assertNoOverflow(page: Page) {
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > window.innerWidth
-  );
-  expect(overflow).toBe(false);
-}
-
 async function assertMobileTouchTargets(page: Page) {
   const isMobile = await page.evaluate(() => window.innerWidth <= 480);
   if (!isMobile) return;
@@ -200,7 +175,7 @@ async function assertMobileTouchTargets(page: Page) {
   }
 }
 
-async function setupApiMocks(page: Page, mode: 'new' | 'active' | 'provisioning') {
+async function setupApiMocks(page: Page, mode: AuditMode) {
   await page.route('**/api/**', async (route: Route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;

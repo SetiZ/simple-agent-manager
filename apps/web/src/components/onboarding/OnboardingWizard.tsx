@@ -54,11 +54,13 @@ function getNextRecommendedStep(status: SetupStatus, ownSetupMode: boolean): Wiz
 }
 
 function getStepClassName(isActive: boolean, isAvailable: boolean): string {
-  const stateClass = isActive
-    ? 'bg-surface text-accent border-b-2 border-b-accent'
-    : isAvailable
-      ? 'bg-inset text-fg-muted'
-      : 'bg-inset text-fg-muted/50';
+  let stateClass = 'bg-inset text-fg-muted/50';
+  if (isAvailable) {
+    stateClass = 'bg-inset text-fg-muted';
+  }
+  if (isActive) {
+    stateClass = 'bg-surface text-accent border-b-2 border-b-accent';
+  }
 
   return `flex-1 py-3 px-2 text-xs font-medium text-center border-none cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${stateClass}`;
 }
