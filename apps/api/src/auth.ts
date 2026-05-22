@@ -109,7 +109,7 @@ export function createAuth(env: Env) {
       github: {
         clientId: env.GITHUB_CLIENT_ID,
         clientSecret: env.GITHUB_CLIENT_SECRET,
-        scope: ['read:user', 'user:email'],
+        scope: ['read:user', 'user:email', 'read:org'],
         // Ensure existing linked users are refreshed with latest provider profile data on sign-in.
         overrideUserInfoOnSignIn: true,
         // Custom getUserInfo to ensure we persist the account's primary email when available.
