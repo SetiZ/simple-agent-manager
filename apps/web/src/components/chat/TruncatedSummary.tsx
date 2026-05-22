@@ -3,6 +3,7 @@ import { type FC, useCallback, useEffect, useRef, useState } from 'react';
 
 import { useGlobalAudio } from '../../contexts/GlobalAudioContext';
 import { getTtsApiUrl } from '../../lib/api';
+import { RenderedMarkdown } from '../MarkdownRenderer';
 
 /** Lazily computed TTS API URL — avoids module-scope errors in test environments. */
 let _cachedTtsApiUrl: string | undefined;
@@ -92,9 +93,9 @@ export const TruncatedSummary: FC<TruncatedSummaryProps> = ({ summary, taskId })
       <Dialog isOpen={isModalOpen} onClose={handleClose} maxWidth="lg">
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <h2 id="dialog-title" className="text-lg font-semibold text-fg-primary">
+            <h3 id="dialog-title" className="text-lg font-semibold text-fg-primary">
               Task Summary
-            </h2>
+            </h3>
             {showSpeaker && (
               <button
                 type="button"
@@ -113,9 +114,7 @@ export const TruncatedSummary: FC<TruncatedSummaryProps> = ({ summary, taskId })
             )}
           </div>
 
-          <p className="text-fg-primary whitespace-pre-wrap break-words">
-            {summary}
-          </p>
+          <RenderedMarkdown content={summary} inline />
           <div className="flex justify-end">
             <button
               type="button"
