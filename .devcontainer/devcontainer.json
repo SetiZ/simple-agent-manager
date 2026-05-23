@@ -8,7 +8,7 @@
 	},
 	"features": {
 		// Docker-in-Docker for running workspace devcontainers
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:3": {},
 		// GitHub CLI for repo management
 		"ghcr.io/devcontainers/features/github-cli:1": {},
 		// Go for VM Agent development
