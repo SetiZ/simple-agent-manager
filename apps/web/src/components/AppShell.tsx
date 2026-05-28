@@ -170,7 +170,7 @@ export function AppShell({ children }: AppShellProps) {
       <div className="flex flex-col h-screen">
         <header className="relative z-30 flex items-center justify-between px-4 py-2 glass-chrome glass-panel-container glass-composited border-x-0 border-t-0 after:content-[''] after:absolute after:bottom-0 after:left-[10%] after:right-[10%] after:h-0.5 after:bg-[radial-gradient(ellipse_at_center,rgba(34,197,94,0.3)_0%,transparent_70%)] after:blur-[1px] after:pointer-events-none">
           {/* Title on the left */}
-          <Link to="/sam">
+          <Link to="/dashboard">
             <img src="/sam-head.png" alt="SAM" className="h-7 w-7 object-contain" />
           </Link>
           {/* Search + Notifications + Hamburger on the right */}
