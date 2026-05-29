@@ -32,6 +32,40 @@ func NewAPIClient(config CLIConfig, httpClient HTTPDoer) APIClient {
 	return APIClient{config: config, http: httpClient}
 }
 
+func ExchangeAPIToken(ctx context.Context, httpClient HTTPDoer, apiURL string, token string) (TokenLoginResponse, error) {
+	var response TokenLoginResponse
+	err := postAuthJSON(ctx, httpClient, normalizeAPIURL(apiURL)+"/api/auth/token-login", map[string]any{"token": token}, &response)
+	if err != nil {
+		return response, err
+	}
+	if response.SessionCookie == "" {
+		return response, APIError{Status: http.StatusOK, Code: "MISSING_SESSION_COOKIE", Message: "SAM API did not return a session cookie"}
+	}
+	return response, nil
+}
+
+func CreateDeviceCode(ctx context.Context, httpClient HTTPDoer, apiURL string) (DeviceCodeResponse, error) {
+	var response DeviceCodeResponse
+	err := postAuthJSON(ctx, httpClient, normalizeAPIURL(apiURL)+"/api/auth/device/code", nil, &response)
+	return response, err
+}
+
+func ExchangeDeviceCode(ctx context.Context, httpClient HTTPDoer, apiURL string, deviceCode string) (TokenLoginResponse, error) {
+	var response TokenLoginResponse
+	err := postAuthJSON(ctx, httpClient, normalizeAPIURL(apiURL)+"/api/auth/device/token", map[string]any{"deviceCode": deviceCode}, &response)
+	if err != nil {
+		return response, err
+	}
+	if response.SessionCookie == "" {
+		return response, APIError{Status: http.StatusOK, Code: "MISSING_SESSION_COOKIE", Message: "SAM API did not return a session cookie"}
+	}
+	return response, nil
+}
+
+func postAuthJSON(ctx context.Context, httpClient HTTPDoer, endpoint string, body map[string]any, out any) error {
+	return doJSON(ctx, httpClient, http.MethodPost, endpoint, "", body, out)
+}
+
 func (c APIClient) SubmitTask(ctx context.Context, projectID string, message string, options TaskSubmitOptions) (SubmitTaskResponse, error) {
 	body := map[string]any{"message": message}
 	addIfSet(body, "agentType", options.Agent)
@@ -91,6 +125,10 @@ func projectAPIPath(projectID string, segments ...string) string {
 }
 
 func (c APIClient) request(ctx context.Context, method string, path string, body map[string]any, out any) error {
+	return doJSON(ctx, c.http, method, c.config.APIURL+path, c.config.SessionCookie, body, out)
+}
+
+func doJSON(ctx context.Context, httpClient HTTPDoer, method string, endpoint string, cookie string, body map[string]any, out any) error {
 	var reader io.Reader
 	if body != nil {
 		content, err := json.Marshal(body)
@@ -99,17 +137,19 @@ func (c APIClient) request(ctx context.Context, method string, path string, body
 		}
 		reader = bytes.NewReader(content)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.config.APIURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Cookie", c.config.SessionCookie)
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	response, err := c.http.Do(req)
+	response, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
