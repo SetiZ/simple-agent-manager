@@ -13,10 +13,10 @@ When a user cancels an in-flight agent prompt from the UI, the VM agent intentio
 
 ## Checklist
 
-- [ ] Update VM agent process-exit handling so intentional prompt-cancel restarts do not consume crash restart budget.
-- [ ] Preserve crash restart accounting for unexpected exits and crash recovery paths.
-- [ ] Add regression coverage for repeated control-plane prompt cancels with a low `MaxRestartAttempts`.
-- [ ] Run focused Go tests for `packages/vm-agent/internal/acp`.
+- [x] Update VM agent process-exit handling so intentional prompt-cancel restarts do not consume crash restart budget.
+- [x] Preserve crash restart accounting for unexpected exits and crash recovery paths.
+- [x] Add regression coverage for repeated control-plane prompt cancels with a low `MaxRestartAttempts`.
+- [x] Run focused Go tests for `packages/vm-agent/internal/acp`.
 
 ## Acceptance Criteria
 
