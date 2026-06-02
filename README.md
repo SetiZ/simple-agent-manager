@@ -24,7 +24,7 @@
 
 **Chat history that outlives workspaces.** Conversations persist at the project level. Stop a workspace, spin up a new one weeks later, and your full history is still there.
 
-**Your infrastructure, your costs.** Self-hosted on Cloudflare (free tier) + Hetzner Cloud VMs. A workspace costs ~$0.007–0.03/hr compared to $0.18–0.36/hr on GitHub Codespaces.
+**Your infrastructure, your costs.** Self-hosted on Cloudflare ($5/mo Workers Paid plan) + Hetzner Cloud VMs. A workspace costs ~$0.007–0.03/hr compared to $0.18–0.36/hr on GitHub Codespaces.
 
 ## How It Works
 
@@ -79,7 +79,7 @@ SAM deploys automatically via GitHub Actions. Fork, configure, push. For the com
 
 ### Prerequisites
 
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier works)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (Workers Paid plan, $5/mo)
 - A domain with nameservers pointing to Cloudflare
 - A [GitHub App](https://simple-agent-manager.org/docs/guides/self-hosting/#github-setup) for OAuth + repo access
 
