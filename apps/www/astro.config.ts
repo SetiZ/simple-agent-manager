@@ -1,8 +1,6 @@
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
-import rehypeMermaid from 'rehype-mermaid';
-
 export default defineConfig({
   site: process.env.SITE_URL || 'https://www.simple-agent-manager.org',
   server: {
@@ -89,6 +87,10 @@ export default defineConfig({
             defer: true,
           },
         },
+        {
+          tag: 'script',
+          attrs: { type: 'module', src: '/scripts/docs-mermaid.js' },
+        },
       ],
       disable404Route: true,
     }),
@@ -101,6 +103,5 @@ export default defineConfig({
     shikiConfig: {
       theme: 'night-owl',
     },
-    rehypePlugins: [[rehypeMermaid, { strategy: 'inline-svg', dark: true }]],
   },
 });
