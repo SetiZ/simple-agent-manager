@@ -223,11 +223,25 @@ export async function generateAppJWT(env: Env): Promise<string> {
 export async function getInstallationToken(
   installationId: string,
   env: Env,
-  extraPermissions?: Record<string, string>,
+  options?: Record<string, string> | {
+    permissions?: Record<string, string>;
+    repositoryIds?: number[];
+    repositories?: string[];
+  },
 ): Promise<{ token: string; expiresAt: string }> {
   const jwt = await generateAppJWT(env);
 
-  const body = extraPermissions ? JSON.stringify({ permissions: extraPermissions }) : undefined;
+  const body = options
+    ? JSON.stringify(
+        'permissions' in options || 'repositoryIds' in options || 'repositories' in options
+          ? {
+              ...(options.permissions ? { permissions: options.permissions } : {}),
+              ...(options.repositoryIds ? { repository_ids: options.repositoryIds } : {}),
+              ...(options.repositories ? { repositories: options.repositories } : {}),
+            }
+          : { permissions: options }
+      )
+    : undefined;
 
   const response = await fetch(
     `https://api.github.com/app/installations/${installationId}/access_tokens`,
