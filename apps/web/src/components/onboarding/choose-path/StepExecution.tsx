@@ -181,6 +181,7 @@ export function StepExecution({ steps, tags, onComplete, onDismiss }: StepExecut
         repository: form.selectedRepoUrl,
         installationId: selectedRepo.installationId,
         githubRepoId: selectedRepo.id,
+        defaultBranch: selectedRepo.defaultBranch,
       });
       if (abortRef.current.signal.aborted) return;
       onDismiss();
