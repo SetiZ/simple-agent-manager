@@ -18,8 +18,28 @@ vi.mock('react-router', async () => {
   };
 });
 
+// ── Auth / theme / signOut mocks — mutable so tests can vary them ──
+
+let mockIsSuperadmin = false;
+const mockSetTheme = vi.fn();
+let mockIsDark = true;
+const mockSignOut = vi.fn();
+
 vi.mock('../../src/components/AuthProvider', () => ({
-  useAuth: () => ({ isSuperadmin: false }),
+  useAuth: () => ({ isSuperadmin: mockIsSuperadmin }),
+}));
+
+vi.mock('../../src/contexts/ThemeContext', () => ({
+  useTheme: () => ({
+    theme: mockIsDark ? 'dark' : 'light',
+    resolvedTheme: mockIsDark ? 'dark' : 'light',
+    isDark: mockIsDark,
+    setTheme: mockSetTheme,
+  }),
+}));
+
+vi.mock('../../src/lib/auth', () => ({
+  signOut: () => mockSignOut(),
 }));
 
 vi.mock('../../src/lib/api', async (importOriginal) => ({
@@ -97,10 +117,38 @@ function renderPalette(onClose = vi.fn()) {
   };
 }
 
+// Waits for the palette to finish its async fetches (Navigation always renders),
+// then types `query` into the combobox. Returns the input for further interaction.
+async function openAndFilter(query: string) {
+  const input = screen.getByRole('combobox');
+  await waitFor(() => {
+    expect(screen.getByText('Navigation')).toBeInTheDocument();
+  });
+  fireEvent.change(input, { target: { value: query } });
+  return input;
+}
+
+// Filters to `query`, waits for at least one matching option, then presses Enter
+// to execute the top result.
+async function filterAndExecute(query: string) {
+  const input = await openAndFilter(query);
+  await waitFor(() => {
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+  });
+  fireEvent.keyDown(input, { key: 'Enter' });
+}
+
+const optionLabels = () =>
+  screen.getAllByRole('option').map((o) => o.textContent);
+
 describe('GlobalCommandPalette — Context Awareness', () => {
   beforeEach(() => {
     mockNavigate.mockClear();
+    mockSetTheme.mockClear();
+    mockSignOut.mockClear();
     mockPathname = '/dashboard';
+    mockIsSuperadmin = false;
+    mockIsDark = true;
   });
 
   // ── No context on dashboard ──
@@ -343,5 +391,78 @@ describe('GlobalCommandPalette — Context Awareness', () => {
 
     // All existing categories should still be present
     expect(screen.getByText('Navigation')).toBeInTheDocument();
+  });
+
+  // ── Settings deep-links (always available) ──
+
+  it('shows Settings deep-links for all users', async () => {
+    mockPathname = '/dashboard';
+    renderPalette();
+    await openAndFilter('settings');
+
+    const labels = optionLabels();
+    expect(labels.some((l) => l?.includes('Settings: Cloud Provider'))).toBe(true);
+    expect(labels.some((l) => l?.includes('Settings: GitHub'))).toBe(true);
+    expect(labels.some((l) => l?.includes('Settings: API Tokens'))).toBe(true);
+  });
+
+  // ── Admin deep-links (superadmin-gated) ──
+
+  it('hides Admin deep-links for non-superadmins', async () => {
+    mockIsSuperadmin = false;
+    mockPathname = '/dashboard';
+    renderPalette();
+    await openAndFilter('admin');
+
+    const labels = screen.queryAllByRole('option').map((o) => o.textContent);
+    expect(labels.some((l) => l?.includes('Admin'))).toBe(false);
+  });
+
+  it('shows Admin deep-links for superadmins', async () => {
+    mockIsSuperadmin = true;
+    mockPathname = '/dashboard';
+    renderPalette();
+    await openAndFilter('admin');
+
+    const labels = optionLabels();
+    expect(labels.some((l) => l?.includes('Admin: Users'))).toBe(true);
+    expect(labels.some((l) => l?.includes('Admin: Logs'))).toBe(true);
+    expect(labels.some((l) => l?.includes('Admin: Costs'))).toBe(true);
+  });
+
+  // ── Quick actions: Toggle Theme ──
+
+  it.each([
+    [true, 'light'],
+    [false, 'dark'],
+  ])('Toggle Theme switches theme when currently dark=%s', async (isDark, expected) => {
+    mockIsDark = isDark;
+    mockPathname = '/dashboard';
+    renderPalette();
+    await filterAndExecute('toggle theme');
+
+    expect(mockSetTheme).toHaveBeenCalledWith(expected);
+  });
+
+  it('Sign Out invokes signOut', async () => {
+    mockPathname = '/dashboard';
+    renderPalette();
+    await filterAndExecute('sign out');
+
+    expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  // ── Navigation targets (Go to Nodes, Map, Tools) ──
+
+  it.each([
+    ['go to nodes', '/nodes'],
+    ['map', '/account-map'],
+    ['tools', '/tools'],
+  ])('"%s" navigates to %s', async (query, expectedPath) => {
+    mockPathname = '/dashboard';
+    renderPalette();
+    await filterAndExecute(query);
+
+    expect(mockNavigate).toHaveBeenCalledWith(expectedPath);
   });
 });
