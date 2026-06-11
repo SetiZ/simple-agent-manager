@@ -121,6 +121,9 @@ func (h *SessionHost) triggerPromptForceStopIfStuck(promptID uint64, reason stri
 	})
 	h.broadcastControl(MsgSessionPromptDone, nil)
 	h.broadcastAgentStatus(StatusError, agentType, reason)
+	// Report idle so the browser status bar clears the "prompting" spinner.
+	// The error state is already broadcast via broadcastAgentStatus above.
+	h.reportActivity("idle")
 }
 
 func (h *SessionHost) setStatus(status SessionHostStatus, errMsg string) {

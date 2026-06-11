@@ -50,7 +50,7 @@ export function upsertActivityState(
     now,
     promptStartedAt,
     update.agentType ?? null,
-    update.restartCount ?? null,
+    update.restartCount ?? 0,
     update.statusError ?? null,
   );
 }
@@ -157,11 +157,12 @@ export function reconcileStaleActivity(
   const cutoff = Date.now() - threshold;
   const now = Date.now();
 
-  // Identify stale sessions for broadcast notification
+  // Identify stale sessions for broadcast notification.
+  // Heal prompting, error, and recovering states that have been stuck too long.
   const staleRows = sql
     .exec(
       `SELECT session_id FROM session_state
-       WHERE activity = 'prompting' AND activity_at < ?`,
+       WHERE activity IN ('prompting', 'error', 'recovering') AND activity_at < ?`,
       cutoff,
     )
     .toArray();
@@ -171,7 +172,7 @@ export function reconcileStaleActivity(
   // Bulk-heal all stale sessions in a single atomic statement
   sql.exec(
     `UPDATE session_state SET activity = 'idle', activity_at = ?
-     WHERE activity = 'prompting' AND activity_at < ?`,
+     WHERE activity IN ('prompting', 'error', 'recovering') AND activity_at < ?`,
     now,
     cutoff,
   );
