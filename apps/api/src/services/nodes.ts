@@ -198,6 +198,7 @@ export async function provisionNode(
       swapSwappiness: env.SWAP_SWAPPINESS,
       role: isDeploymentNode ? 'deployment' : undefined,
       environmentId: deploymentContext?.environmentId,
+      deploySigningPubKey: isDeploymentNode ? env.DEPLOY_SIGNING_PUBLIC_KEY : undefined,
     });
 
     if (!validateCloudInitSize(cloudInit)) {
@@ -220,6 +221,7 @@ export async function provisionNode(
       labels: {
         node: node.id.toLowerCase(),
         managed: 'simple-agent-manager',
+        role: isDeploymentNode ? 'deployment' : 'workspace',
       },
     });
 

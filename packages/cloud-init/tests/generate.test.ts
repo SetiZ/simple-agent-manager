@@ -1796,9 +1796,13 @@ describe('swap file configuration', () => {
 // =============================================================================
 
 describe('deployment role support', () => {
-  it('sets ROLE=deployment and ENVIRONMENT_ID in vm-agent systemd unit', () => {
+  it('sets deployment role environment in vm-agent systemd unit', () => {
     const config = generateCloudInit(
-      baseVariables({ role: 'deployment', environmentId: 'env-abc123' }),
+      baseVariables({
+        role: 'deployment',
+        environmentId: 'env-abc123',
+        deploySigningPubKey: 'deploy-pub-key-abc123+/=',
+      }),
       { validateSize: false },
     );
     const parsed = YAML.parse(config);
@@ -1808,10 +1812,12 @@ describe('deployment role support', () => {
     );
     expect(unitFile).toBeDefined();
     expect(unitFile.content).toContain('Environment=ROLE=deployment');
+    expect(unitFile.content).toContain('Environment=NODE_ROLE=deployment');
     expect(unitFile.content).toContain('Environment=ENVIRONMENT_ID=env-abc123');
+    expect(unitFile.content).toContain('Environment=DEPLOY_SIGNING_PUB_KEY=deploy-pub-key-abc123+/=');
   });
 
-  it('leaves ROLE and ENVIRONMENT_ID empty when not specified', () => {
+  it('leaves deployment environment empty when not specified', () => {
     const config = generateCloudInit(
       baseVariables(),
       { validateSize: false },
@@ -1824,7 +1830,9 @@ describe('deployment role support', () => {
     expect(unitFile).toBeDefined();
     // Empty string values — vm-agent ignores empty env vars
     expect(unitFile.content).toContain('Environment=ROLE=\n');
+    expect(unitFile.content).toContain('Environment=NODE_ROLE=\n');
     expect(unitFile.content).toContain('Environment=ENVIRONMENT_ID=\n');
+    expect(unitFile.content).toContain('Environment=DEPLOY_SIGNING_PUB_KEY=\n');
   });
 
   it('generates valid YAML with deployment role set', () => {
@@ -1840,6 +1848,56 @@ describe('deployment role support', () => {
     // Verify config stays within 32KB limit
     const sizeBytes = new TextEncoder().encode(config).length;
     expect(sizeBytes).toBeLessThanOrEqual(32 * 1024);
+  });
+
+  it('writes an initial managed Caddyfile for deployment routing', () => {
+    const config = generateCloudInit(
+      baseVariables({ role: 'deployment', environmentId: 'env-deploy-xyz' }),
+      { validateSize: false },
+    );
+    const parsed = YAML.parse(config);
+
+    const caddyfile = parsed.write_files.find(
+      (f: { path: string }) => f.path === '/etc/caddy/Caddyfile',
+    );
+    expect(caddyfile).toBeDefined();
+    expect(caddyfile.permissions).toBe('0644');
+    expect(caddyfile.content).toContain('Managed by SAM deployment agent');
+    expect(caddyfile.content).toContain('caddy reload');
+    expect(caddyfile.content).toContain('auto_https off');
+    expect(caddyfile.content).toContain(':80');
+    expect(caddyfile.content).toContain('SAM deployment node awaiting release');
+  });
+
+  it('guards Caddy path preparation behind ROLE=deployment', () => {
+    const config = generateCloudInit(
+      baseVariables({ role: 'deployment', environmentId: 'env-deploy-xyz' }),
+      { validateSize: false },
+    );
+    const parsed = YAML.parse(config);
+    const runcmd = parsed.runcmd.join('\n');
+
+    expect(runcmd).toContain('ROLE="deployment"');
+    expect(runcmd).toContain('if [ "$ROLE" = "deployment" ]; then');
+    expect(runcmd).toContain('Preparing Caddy paths for deployment node routing');
+    expect(runcmd).toContain('vm-agent owns Caddy install/start');
+    expect(runcmd).not.toContain('apt-get install -y caddy');
+    expect(runcmd).not.toContain('systemctl reload-or-restart caddy');
+  });
+
+  it('starts vm-agent before non-blocking deployment Caddy path setup', () => {
+    const config = generateCloudInit(
+      baseVariables({ role: 'deployment', environmentId: 'env-deploy-xyz' }),
+      { validateSize: false },
+    );
+    const parsed = YAML.parse(config);
+    const runcmd = parsed.runcmd.join('\n');
+
+    expect(runcmd.indexOf('PHASE START: vm-agent-start')).toBeGreaterThan(-1);
+    expect(runcmd.indexOf('PHASE START: caddy-setup')).toBeGreaterThan(-1);
+    expect(runcmd.indexOf('PHASE START: vm-agent-start')).toBeLessThan(
+      runcmd.indexOf('PHASE START: caddy-setup'),
+    );
   });
 
   it('rejects invalid role values', () => {

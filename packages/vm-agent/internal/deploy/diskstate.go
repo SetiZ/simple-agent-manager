@@ -83,8 +83,8 @@ func (d *DiskState) ReadState(seq int64) (*ReleaseState, error) {
 	return &state, nil
 }
 
-// WriteRelease atomically writes a release's compose file and metadata to disk.
-func (d *DiskState) WriteRelease(state *ReleaseState, composeYAML string) error {
+// WriteRelease atomically writes a release's compose file, Caddyfile, and metadata to disk.
+func (d *DiskState) WriteRelease(state *ReleaseState, composeYAML string, caddyfile string) error {
 	dir := d.releaseDir(state.Seq)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create release directory: %w", err)
@@ -92,8 +92,13 @@ func (d *DiskState) WriteRelease(state *ReleaseState, composeYAML string) error 
 
 	// Write compose file
 	composePath := filepath.Join(dir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(composeYAML), 0644); err != nil {
+	if err := writeFileAtomic(composePath, composeYAML, 0644); err != nil {
 		return fmt.Errorf("write compose file: %w", err)
+	}
+
+	caddyPath := d.CaddyfilePath(state.Seq)
+	if err := writeFileAtomic(caddyPath, caddyfile, 0644); err != nil {
+		return fmt.Errorf("write Caddyfile: %w", err)
 	}
 
 	// Compute and store compose hash
@@ -106,7 +111,7 @@ func (d *DiskState) WriteRelease(state *ReleaseState, composeYAML string) error 
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
-	if err := os.WriteFile(metadataPath, metaBytes, 0644); err != nil {
+	if err := writeFileAtomic(metadataPath, string(metaBytes), 0644); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
 
@@ -120,7 +125,7 @@ func (d *DiskState) UpdateState(state *ReleaseState) error {
 	if err != nil {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
-	if err := os.WriteFile(metadataPath, metaBytes, 0644); err != nil {
+	if err := writeFileAtomic(metadataPath, string(metaBytes), 0644); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
 	return nil
@@ -151,6 +156,11 @@ func (d *DiskState) SetCurrent(seq int64) error {
 // ComposeFilePath returns the path to the docker-compose.yml for a given release.
 func (d *DiskState) ComposeFilePath(seq int64) string {
 	return filepath.Join(d.releaseDir(seq), "docker-compose.yml")
+}
+
+// CaddyfilePath returns the path to the Caddyfile for a given release.
+func (d *DiskState) CaddyfilePath(seq int64) string {
+	return filepath.Join(d.releaseDir(seq), "Caddyfile")
 }
 
 // CurrentComposeFilePath returns the compose file path for the currently applied release.

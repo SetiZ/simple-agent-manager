@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -16,9 +17,11 @@ import (
 
 // Engine manages the deployment lifecycle: reconcile, apply, revert, observe.
 type Engine struct {
-	disk     *DiskState
-	verifier *Verifier
-	cfg      EngineConfig
+	disk *DiskState
+	cfg  EngineConfig
+
+	verifierMu sync.RWMutex
+	verifier   *Verifier
 
 	// Apply mutex: only one apply at a time. Use TryLock() to reject concurrent applies.
 	applyMu sync.Mutex
@@ -30,13 +33,21 @@ type Engine struct {
 
 // EngineConfig holds the configuration for the deploy engine.
 type EngineConfig struct {
-	EnvironmentID   string
-	NodeID          string
-	ControlPlaneURL string
-	CallbackToken   string
-	ComposeCmd      string // e.g., "docker compose"
-	HealthTimeout   time.Duration
-	HTTPClient      *http.Client
+	EnvironmentID      string
+	NodeID             string
+	ControlPlaneURL    string
+	CallbackToken      string
+	ComposeCmd         string // e.g., "docker compose"
+	CaddyfilePath      string
+	CaddyReloadCmd     string
+	CaddyRestartCmd    string
+	ACMEEmail          string // Contact email for the ACME global options block (optional)
+	ACMECA             string // ACME CA directory URL override, e.g. LE staging (optional)
+	CaddyReadyTimeout  time.Duration
+	CaddyReadyInterval time.Duration
+	HealthTimeout      time.Duration
+	HealthPollInterval time.Duration
+	HTTPClient         *http.Client
 }
 
 // NewEngine creates a new deployment engine.
@@ -44,8 +55,26 @@ func NewEngine(disk *DiskState, verifier *Verifier, cfg EngineConfig) *Engine {
 	if cfg.ComposeCmd == "" {
 		cfg.ComposeCmd = "docker compose"
 	}
+	if cfg.CaddyfilePath == "" {
+		cfg.CaddyfilePath = "/etc/caddy/Caddyfile"
+	}
+	if cfg.CaddyReloadCmd == "" {
+		cfg.CaddyReloadCmd = "caddy reload --config {config} --adapter caddyfile"
+	}
+	if cfg.CaddyRestartCmd == "" {
+		cfg.CaddyRestartCmd = "systemctl restart caddy"
+	}
+	if cfg.CaddyReadyTimeout == 0 {
+		cfg.CaddyReadyTimeout = 2 * time.Minute
+	}
+	if cfg.CaddyReadyInterval == 0 {
+		cfg.CaddyReadyInterval = 2 * time.Second
+	}
 	if cfg.HealthTimeout == 0 {
 		cfg.HealthTimeout = 5 * time.Minute
+	}
+	if cfg.HealthPollInterval == 0 {
+		cfg.HealthPollInterval = 5 * time.Second
 	}
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -64,8 +93,16 @@ func (e *Engine) SetCallbackToken(token string) {
 
 // SetVerifierKey updates the signing public key via the verifier's dual-key rotation.
 func (e *Engine) SetVerifierKey(pubKeyB64 string) error {
+	e.verifierMu.Lock()
+	defer e.verifierMu.Unlock()
+
 	if e.verifier == nil {
-		return fmt.Errorf("no verifier configured")
+		verifier, err := NewVerifier(pubKeyB64)
+		if err != nil {
+			return err
+		}
+		e.verifier = verifier
+		return nil
 	}
 	return e.verifier.SetCurrentKey(pubKeyB64)
 }
@@ -120,10 +157,13 @@ func (e *Engine) Apply(ctx context.Context, payload *ApplyPayload) error {
 	}
 
 	// Verify signature and binding constraints
-	if e.verifier == nil {
+	e.verifierMu.RLock()
+	verifier := e.verifier
+	e.verifierMu.RUnlock()
+	if verifier == nil {
 		return fmt.Errorf("no signature verifier configured — refusing to apply unsigned payload")
 	}
-	if err := e.verifier.Verify(payload, e.cfg.EnvironmentID, e.cfg.NodeID, currentSeq); err != nil {
+	if err := verifier.Verify(payload, e.cfg.EnvironmentID, e.cfg.NodeID, currentSeq); err != nil {
 		return fmt.Errorf("payload verification failed: %w", err)
 	}
 
@@ -146,7 +186,14 @@ func (e *Engine) Apply(ctx context.Context, payload *ApplyPayload) error {
 	})
 
 	// Write release to disk
-	if err := e.disk.WriteRelease(newState, payload.ComposeYAML); err != nil {
+	caddyfile, err := GenerateCaddyfile(payload.Routes, CaddyfileOptions{
+		ACMEEmail: e.cfg.ACMEEmail,
+		ACMECA:    e.cfg.ACMECA,
+	})
+	if err != nil {
+		return fmt.Errorf("generate Caddyfile: %w", err)
+	}
+	if err := e.disk.WriteRelease(newState, payload.ComposeYAML, caddyfile); err != nil {
 		return fmt.Errorf("write release to disk: %w", err)
 	}
 
@@ -165,15 +212,18 @@ func (e *Engine) Apply(ctx context.Context, payload *ApplyPayload) error {
 		return e.handleApplyFailure(ctx, newState, currentSeq, fmt.Errorf("health check: %w", err))
 	}
 
-	// Success: update current pointer
-	if err := e.disk.SetCurrent(payload.Seq); err != nil {
-		return e.handleApplyFailure(ctx, newState, currentSeq, fmt.Errorf("set current pointer: %w", err))
+	if err := e.reloadCaddy(ctx, e.disk.CaddyfilePath(payload.Seq)); err != nil {
+		return e.handleApplyFailure(ctx, newState, currentSeq, fmt.Errorf("caddy reload: %w", err))
 	}
 
 	newState.Status = StatusApplied
 	if err := e.disk.UpdateState(newState); err != nil {
-		slog.Error("deploy.apply: failed to update metadata after success",
-			"seq", payload.Seq, "error", err)
+		return e.handleApplyFailure(ctx, newState, currentSeq, fmt.Errorf("update applied metadata: %w", err))
+	}
+
+	// Success: update current pointer only after metadata is durably applied.
+	if err := e.disk.SetCurrent(payload.Seq); err != nil {
+		return e.handleApplyFailure(ctx, newState, currentSeq, fmt.Errorf("set current pointer: %w", err))
 	}
 
 	services, _ := e.inspectServices(ctx, payload.Seq)
@@ -208,8 +258,9 @@ func (e *Engine) handleApplyFailure(ctx context.Context, state *ReleaseState, pr
 
 		_ = e.disk.UpdateState(state)
 		e.setObserved(ObservedState{
-			AppliedSeq: state.Seq,
-			Status:     StatusFailedInitial,
+			AppliedSeq:   0,
+			Status:       StatusFailedInitial,
+			ErrorMessage: applyErr.Error(),
 		})
 		return fmt.Errorf("apply failed (no previous release to revert): %w", applyErr)
 	}
@@ -223,10 +274,16 @@ func (e *Engine) handleApplyFailure(ctx context.Context, state *ReleaseState, pr
 		slog.Error("deploy.apply: revert also failed",
 			"prevSeq", previousSeq, "error", err)
 		e.setObserved(ObservedState{
-			AppliedSeq: previousSeq,
-			Status:     StatusFailed,
+			AppliedSeq:   previousSeq,
+			Status:       StatusFailed,
+			ErrorMessage: applyErr.Error(),
 		})
 		return fmt.Errorf("apply failed and revert failed: apply=%w, revert=%v", applyErr, err)
+	}
+
+	if err := e.reloadCaddy(ctx, e.disk.CaddyfilePath(previousSeq)); err != nil {
+		slog.Error("deploy.apply: caddy reload for reverted release failed",
+			"prevSeq", previousSeq, "error", err)
 	}
 
 	// Restore current pointer to previous
@@ -335,10 +392,87 @@ func (e *Engine) runCompose(ctx context.Context, composeFile string, args ...str
 	return nil
 }
 
+func (e *Engine) reloadCaddy(ctx context.Context, releaseCaddyfile string) error {
+	content, err := os.ReadFile(releaseCaddyfile)
+	if err != nil {
+		return fmt.Errorf("read release Caddyfile: %w", err)
+	}
+	if err := writeFileAtomic(e.cfg.CaddyfilePath, string(content), 0644); err != nil {
+		return fmt.Errorf("write active Caddyfile: %w", err)
+	}
+
+	parts := strings.Fields(e.cfg.CaddyReloadCmd)
+	if len(parts) == 0 {
+		return fmt.Errorf("empty caddy reload command")
+	}
+	for i, part := range parts {
+		parts[i] = strings.ReplaceAll(part, "{config}", e.cfg.CaddyfilePath)
+	}
+	if err := e.waitForReloadCommand(ctx, parts[0]); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if isCaddyAdminUnavailable(stderr.String()) {
+			if restartErr := e.restartCaddy(ctx); restartErr != nil {
+				return fmt.Errorf("%s: %w (stderr: %s; restart failed: %v)", e.cfg.CaddyReloadCmd, err, stderr.String(), restartErr)
+			}
+			return nil
+		}
+		return fmt.Errorf("%s: %w (stderr: %s)", e.cfg.CaddyReloadCmd, err, stderr.String())
+	}
+	return nil
+}
+
+func (e *Engine) restartCaddy(ctx context.Context) error {
+	parts := strings.Fields(e.cfg.CaddyRestartCmd)
+	if len(parts) == 0 {
+		return fmt.Errorf("empty caddy restart command")
+	}
+	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %w (stderr: %s)", e.cfg.CaddyRestartCmd, err, stderr.String())
+	}
+	return nil
+}
+
+func isCaddyAdminUnavailable(stderr string) bool {
+	return strings.Contains(stderr, "localhost:2019/load") && strings.Contains(stderr, "connection refused")
+}
+
+func (e *Engine) waitForReloadCommand(ctx context.Context, command string) error {
+	if _, err := exec.LookPath(command); err == nil {
+		return nil
+	}
+
+	deadline := time.NewTimer(e.cfg.CaddyReadyTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(e.cfg.CaddyReadyInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("caddy reload command %q not available before context deadline: %w", command, ctx.Err())
+		case <-deadline.C:
+			return fmt.Errorf("caddy reload command %q not available after %s", command, e.cfg.CaddyReadyTimeout)
+		case <-ticker.C:
+			if _, err := exec.LookPath(command); err == nil {
+				return nil
+			}
+		}
+	}
+}
+
 func (e *Engine) waitForHealth(ctx context.Context, seq int64) error {
 	deadline := time.NewTimer(e.cfg.HealthTimeout)
 	defer deadline.Stop()
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(e.cfg.HealthPollInterval)
 	defer ticker.Stop()
 
 	for {

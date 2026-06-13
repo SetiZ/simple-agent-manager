@@ -33,6 +33,12 @@ export interface ComposeRenderContext {
    * Values are injected into the rendered Compose — never persisted in D1.
    */
   resolvedSecrets?: Record<string, string>;
+  /** Public route targets published on 127.0.0.1 for node-local Caddy. */
+  routeTargets?: Array<{
+    service: string;
+    containerPort: number;
+    hostPort: number;
+  }>;
 }
 
 const DEFAULT_MEMORY_LIMIT_MB = 256;
@@ -104,6 +110,7 @@ interface ServiceBuildContext {
   resolvedSecrets: Record<string, string>;
   environmentId: string;
   releaseId: string;
+  routeTargets: NonNullable<ComposeRenderContext['routeTargets']>;
 }
 
 function buildService(
@@ -163,6 +170,11 @@ function buildService(
   // Network
   service.networks = ['sam-internal'];
 
+  const routePorts = buildCtx.routeTargets.filter((route) => route.service === name);
+  if (routePorts.length > 0) {
+    service.ports = routePorts.map((route) => `127.0.0.1:${route.hostPort}:${route.containerPort}`);
+  }
+
   return service;
 }
 
@@ -173,6 +185,7 @@ export function renderCompose(manifest: DeploymentManifest, ctx: ComposeRenderCo
     resolvedSecrets: ctx.resolvedSecrets ?? {},
     environmentId: ctx.environmentId,
     releaseId: ctx.releaseId,
+    routeTargets: ctx.routeTargets ?? [],
   };
 
   const doc: Record<string, unknown> = {};
@@ -195,10 +208,20 @@ export function renderCompose(manifest: DeploymentManifest, ctx: ComposeRenderCo
   doc.services = services;
 
   // -- networks --
+  // The per-environment bridge isolates services from OTHER environments
+  // (each release is its own compose project with its own network), while
+  // still allowing the services within an environment to reach each other by
+  // name. It is intentionally NOT `internal: true`: a container attached only
+  // to an internal network cannot receive traffic from published ports, so
+  // Docker's host->container forwarding for `127.0.0.1:<hostPort>` is dropped
+  // by the internal-network isolation rules. Public routes depend on node-local
+  // Caddy reverse-proxying to that published loopback port, so an internal-only
+  // network makes every public route return 502 even when the container is
+  // healthy. Docker has no per-direction internal flag, so to admit the
+  // required host ingress the network must be a normal bridge.
   doc.networks = {
     'sam-internal': {
       driver: 'bridge',
-      internal: true,
     },
   };
 

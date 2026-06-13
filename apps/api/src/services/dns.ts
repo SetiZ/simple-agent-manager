@@ -26,6 +26,8 @@ const dnsRecordListResponseSchema = v.object({
     id: v.string(),
     name: v.string(),
     type: v.string(),
+    content: v.optional(v.string()),
+    proxied: v.optional(v.boolean()),
   })),
 });
 
@@ -195,6 +197,117 @@ export async function updateDNSRecord(
   if (!response.ok) {
     throw new Error(await readCloudflareError(response, `Failed to update DNS record: ${response.status}`));
   }
+}
+
+async function findDNSRecordByName(
+  recordName: string,
+  env: Env,
+): Promise<{ id: string; name: string; type: string; content?: string; proxied?: boolean } | null> {
+  const timeoutMs = getTimeoutMs(env.CF_API_TIMEOUT_MS, DEFAULT_CF_API_TIMEOUT_MS);
+  const searchUrl = `${CLOUDFLARE_API_BASE}/zones/${env.CF_ZONE_ID}/dns_records?type=A&name=${encodeURIComponent(recordName)}`;
+  const response = await fetchWithTimeout(searchUrl, {
+    headers: {
+      Authorization: `Bearer ${env.CF_API_TOKEN}`,
+    },
+  }, timeoutMs);
+
+  if (!response.ok) {
+    throw new Error(await readCloudflareError(response, `Failed to find DNS record: ${response.status}`));
+  }
+
+  const data = await readResponseJson(response, dnsRecordListResponseSchema, 'cloudflare.dns.find_record_by_name');
+  return data.result[0] ?? null;
+}
+
+/**
+ * Create or update a grey-cloud A record for an app route hostname.
+ *
+ * App routes intentionally use HTTP-01 ACME on the deployment node, so these
+ * records must not be proxied by Cloudflare.
+ */
+export async function upsertAppRouteDNSRecord(
+  hostname: string,
+  ip: string,
+  env: Env,
+): Promise<string> {
+  const existing = await findDNSRecordByName(hostname, env);
+  const timeoutMs = getTimeoutMs(env.CF_API_TIMEOUT_MS, DEFAULT_CF_API_TIMEOUT_MS);
+  const body = JSON.stringify({
+    type: 'A',
+    name: hostname,
+    content: ip,
+    ttl: getDnsTTL(env),
+    proxied: false,
+  });
+
+  const response = await fetchWithTimeout(
+    existing
+      ? `${CLOUDFLARE_API_BASE}/zones/${env.CF_ZONE_ID}/dns_records/${existing.id}`
+      : `${CLOUDFLARE_API_BASE}/zones/${env.CF_ZONE_ID}/dns_records`,
+    {
+      method: existing ? 'PUT' : 'POST',
+      headers: {
+        Authorization: `Bearer ${env.CF_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body,
+    },
+    timeoutMs,
+  );
+
+  if (!response.ok) {
+    throw new Error(await readCloudflareError(response, `Failed to upsert app route DNS record: ${response.status}`));
+  }
+
+  const data = await readResponseJson(response, dnsRecordIdResponseSchema, 'cloudflare.dns.upsert_app_route_record');
+  return data.result.id;
+}
+
+/**
+ * Delete the app-route A record for a hostname, if one exists.
+ *
+ * Idempotent: a missing record (or a record already removed by a concurrent
+ * caller) is treated as success. Returns true if a record was found and
+ * deleted, false if no matching record existed.
+ */
+export async function deleteAppRouteDNSRecord(
+  hostname: string,
+  env: Env,
+): Promise<boolean> {
+  const existing = await findDNSRecordByName(hostname, env);
+  if (!existing) {
+    return false;
+  }
+  await deleteDNSRecord(existing.id, env);
+  return true;
+}
+
+/**
+ * Bulk-deprovision app-route A records by hostname.
+ *
+ * Used when tearing down a deployment environment (or the node hosting it) so
+ * the grey-cloud `r{n}-{service}-{port}-{envId}.apps.{domain}` records created
+ * by {@link upsertAppRouteDNSRecord} do not accumulate as orphans. Tolerant of
+ * already-deleted records and of individual delete failures (logged, skipped)
+ * so a single bad record cannot block the rest of the teardown. Returns the
+ * number of records actually deleted.
+ */
+export async function cleanupAppRouteDNSRecords(
+  hostnames: string[],
+  env: Env,
+): Promise<number> {
+  let deleted = 0;
+  for (const hostname of hostnames) {
+    try {
+      if (await deleteAppRouteDNSRecord(hostname, env)) {
+        deleted++;
+        log.info('dns.app_route_record_cleaned_up', { hostname });
+      }
+    } catch (err) {
+      log.error('dns.app_route_delete_failed', { hostname, error: String(err) });
+    }
+  }
+  return deleted;
 }
 
 /**

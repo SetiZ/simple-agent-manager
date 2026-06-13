@@ -1,10 +1,10 @@
 /**
  * Cloud-init template for node provisioning.
  *
- * ULTRA-MINIMAL: Cloud-init ONLY downloads and starts the VM agent.
- * The agent handles ALL other provisioning (Docker, Node.js, firewall, etc.)
- * and heartbeats immediately on start, giving the control plane visibility
- * within seconds of boot.
+ * ULTRA-MINIMAL: Cloud-init downloads and starts the VM agent, then performs
+ * role-specific bootstrap. For deployment nodes, that includes installing and
+ * enabling Caddy. Starting the agent first keeps provisioning observable while
+ * release-apply retry semantics handle dependencies that are still converging.
  *
  * SECURITY: No provider/user credentials are embedded. The node agent receives
  * a callback token for authenticated control-plane check-ins and requests.
@@ -25,10 +25,11 @@ users:
 
 runcmd:
   # =====================================================================
-  # Cloud-init does ONE thing: download and start the VM agent.
-  # The agent handles ALL provisioning (Docker, firewall, Node.js, etc.)
-  # and starts heartbeating immediately. No packages section — curl is
-  # pre-installed on all Hetzner Ubuntu images.
+  # Cloud-init keeps bootstrap minimal: download vm-agent, perform
+  # start vm-agent, then perform role-specific service setup required before
+  # traffic can be served. The agent handles Docker, firewall, Node.js, release
+  # apply, and heartbeats; release apply remains retryable while role-specific
+  # dependencies are still converging.
   # =====================================================================
 
   # Disable automatic OS upgrades — ephemeral VMs gain nothing from them
@@ -75,6 +76,19 @@ runcmd:
   - systemctl enable vm-agent
   - systemctl start vm-agent
   - 'logger -t sam-boot "PHASE END: vm-agent-start"'
+
+  - 'logger -t sam-boot "PHASE START: caddy-setup"'
+  - |
+    set -euo pipefail
+    ROLE="{{ role }}"
+    if [ "$ROLE" = "deployment" ]; then
+      logger -t sam-boot "Preparing Caddy paths for deployment node routing"
+      mkdir -p /etc/caddy /var/lib/caddy /var/log/caddy
+      logger -t sam-boot "Caddy paths ready; vm-agent owns Caddy install/start"
+    else
+      logger -t sam-boot "Skipping Caddy setup for ROLE=$ROLE"
+    fi
+  - 'logger -t sam-boot "PHASE END: caddy-setup"'
   - 'logger -t sam-boot "ALL PHASES COMPLETE"'
 
 write_files:
@@ -102,13 +116,28 @@ write_files:
       Environment=PROVIDER={{ provider }}
       Environment=DEVCONTAINER_CACHE_ENABLED={{ devcontainer_cache_enabled }}
       Environment=ROLE={{ role }}
+      Environment=NODE_ROLE={{ role }}
       Environment=ENVIRONMENT_ID={{ environment_id }}
+      Environment=DEPLOY_SIGNING_PUB_KEY={{ deploy_signing_pub_key }}
       ExecStart=/usr/local/bin/vm-agent
       Restart=always
       RestartSec=5
 
       [Install]
       WantedBy=multi-user.target
+
+  - path: /etc/caddy/Caddyfile
+    permissions: '0644'
+    content: |
+      # Managed by SAM deployment agent.
+      # Release applies replace this file and run caddy reload.
+      {
+        auto_https off
+      }
+
+      :80 {
+        respond "SAM deployment node awaiting release" 200
+      }
 
   - path: /etc/workspace/config.json
     content: |

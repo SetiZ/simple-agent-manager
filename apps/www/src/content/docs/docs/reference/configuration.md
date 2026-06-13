@@ -18,6 +18,8 @@ These are Cloudflare Worker secrets, set during deployment. Pulumi auto-generate
 | `ENCRYPTION_KEY`           | AES-256-GCM key for credential encryption (auto-generated)                                    |
 | `JWT_PRIVATE_KEY`          | RSA-2048 private key for signing tokens (auto-generated)                                      |
 | `JWT_PUBLIC_KEY`           | RSA-2048 public key for token verification (auto-generated)                                   |
+| `DEPLOY_SIGNING_PRIVATE_KEY` | Ed25519 private key for signing deployment apply payloads                                     |
+| `DEPLOY_SIGNING_PUBLIC_KEY`  | Ed25519 public key delivered to deployment nodes for apply payload verification               |
 | `CF_API_TOKEN`             | Cloudflare API token for infrastructure, DNS, observability, AI Gateway, and admin log access |
 | `CF_ZONE_ID`               | Cloudflare zone ID for DNS record management                                                  |
 | `CF_ACCOUNT_ID`            | Cloudflare account ID                                                                         |
@@ -50,7 +52,7 @@ Set in GitHub Settings → Environments → production:
 | `RESOURCE_PREFIX`     | Cloudflare resource name prefix | `sam`              |
 | `PULUMI_STATE_BUCKET` | R2 bucket for Pulumi state      | `sam-pulumi-state` |
 
-Required GitHub Actions secrets include `CF_API_TOKEN`, `CF_ACCOUNT_ID`, `CF_ZONE_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `PULUMI_CONFIG_PASSPHRASE`, `GH_CLIENT_ID`, `GH_CLIENT_SECRET`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, and `GH_APP_SLUG`. `GH_WEBHOOK_SECRET` is strongly recommended for webhook signature verification.
+Required GitHub Actions secrets include `CF_API_TOKEN`, `CF_ACCOUNT_ID`, `CF_ZONE_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `PULUMI_CONFIG_PASSPHRASE`, `GH_CLIENT_ID`, `GH_CLIENT_SECRET`, `GH_APP_ID`, `GH_APP_PRIVATE_KEY`, `GH_APP_SLUG`, `DEPLOY_SIGNING_PRIVATE_KEY`, and `DEPLOY_SIGNING_PUBLIC_KEY`. `GH_WEBHOOK_SECRET` is strongly recommended for webhook signature verification. Deploy signing keys must be provisioned in the GitHub environment before running the deploy workflow.
 
 :::note[Naming convention]
 GitHub App secrets use `GH_*` prefix (e.g., `GH_CLIENT_ID`, `GH_WEBHOOK_SECRET`) because GitHub Actions secret names cannot start with `GITHUB_*`. The deploy workflow maps those `GH_*` secrets to `GITHUB_*` Worker secrets.
@@ -178,6 +180,14 @@ GitHub App secrets use `GH_*` prefix (e.g., `GH_CLIENT_ID`, `GH_WEBHOOK_SECRET`)
 | `NODE_AGENT_READY_POLL_INTERVAL_MS`      | `5000`             | Poll interval for agent readiness     |
 | `TASK_RUNNER_WORKSPACE_READY_TIMEOUT_MS` | `1800000` (30 min) | Max wait for workspace-ready callback |
 | `PROVISIONING_TIMEOUT_MS`                | `1800000` (30 min) | Cron marks stuck workspaces as error  |
+
+## App Deployment Routing
+
+| Variable                       | Default | Description                                           |
+| ------------------------------ | ------- | ----------------------------------------------------- |
+| `DEPLOY_PAYLOAD_EXPIRY_SECONDS` | `3600`  | Signed deployment apply payload lifetime              |
+| `DEPLOYMENT_ROUTE_PORT_BASE`   | `35000` | First node-local loopback port reserved for app routes |
+| `DEPLOYMENT_ROUTE_PORT_SPAN`   | `1000`  | Number of loopback ports reserved per deployment node |
 
 ## Platform Limits
 
