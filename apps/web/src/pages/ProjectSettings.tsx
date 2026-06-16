@@ -1,97 +1,32 @@
-import type { ProjectRuntimeConfigResponse, VMSize } from '@simple-agent-manager/shared';
+import type { VMSize } from '@simple-agent-manager/shared';
 import {
   AGENT_CATALOG,
   DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS,
   MAX_WORKSPACE_IDLE_TIMEOUT_MS,
   MIN_WORKSPACE_IDLE_TIMEOUT_MS,
 } from '@simple-agent-manager/shared';
-import { Button, Spinner } from '@simple-agent-manager/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { Button } from '@simple-agent-manager/ui';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
-import { ConnectFlow } from '../components/ConnectFlow';
-import { ConnectionsOverview } from '../components/ConnectionsOverview';
 import { DeploymentSettings } from '../components/DeploymentSettings';
+import { ProjectConnectionsSection } from '../components/project-settings/ProjectConnectionsSection';
+import { ProjectRuntimeConfigSection } from '../components/project-settings/ProjectRuntimeConfigSection';
 import { ProjectAgentsSection } from '../components/ProjectAgentsSection';
 import { RepositoryAccessSettings } from '../components/RepositoryAccessSettings';
 import { ScalingSettings } from '../components/ScalingSettings';
-import { formatProviderCatalogContext, selectProviderCatalog } from '../components/vm/format-vm-size';
+import {
+  formatProviderCatalogContext,
+  selectProviderCatalog,
+} from '../components/vm/format-vm-size';
 import { VmSizeCard } from '../components/vm/VmSizeCard';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useToast } from '../hooks/useToast';
 import {
   deleteProject,
-  deleteProjectRuntimeEnvVar,
-  deleteProjectRuntimeFile,
-  getProjectRuntimeConfig,
   updateProject,
-  upsertProjectRuntimeEnvVar,
-  upsertProjectRuntimeFile,
 } from '../lib/api';
 import { useProjectContext } from './ProjectContext';
-
-function ProjectConnectionsSection({
-  projectId,
-  onUpdated,
-}: {
-  projectId: string;
-  onUpdated: () => void;
-}) {
-  const [showConnect, setShowConnect] = useState(false);
-  const [connectAgentId, setConnectAgentId] = useState<string | undefined>();
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const handleConnect = (consumerId: string, consumerKind: 'agent' | 'compute') => {
-    if (consumerKind === 'agent') {
-      setConnectAgentId(consumerId);
-      setShowConnect(true);
-    }
-  };
-
-  const handleConnected = () => {
-    setShowConnect(false);
-    setConnectAgentId(undefined);
-    setRefreshKey((k) => k + 1);
-    onUpdated();
-  };
-
-  return (
-    <section className="glass-surface rounded-lg p-4 grid gap-3">
-      <div>
-        <h2 className="sam-type-section-heading m-0 text-fg-primary">
-          Connections
-        </h2>
-        <p className="m-0 mt-1 text-xs text-fg-muted">
-          How each agent and cloud provider resolves credentials for this project.
-          Badges show whether a credential comes from a project override, your user default, or the SAM platform.
-        </p>
-      </div>
-
-      {showConnect ? (
-        <ConnectFlow
-          projectId={projectId}
-          initialAgentId={connectAgentId}
-          onConnected={handleConnected}
-          onCancel={() => {
-            setShowConnect(false);
-            setConnectAgentId(undefined);
-          }}
-        />
-      ) : (
-        <>
-          <ConnectionsOverview key={refreshKey} projectId={projectId} onConnect={handleConnect} />
-          <button
-            type="button"
-            onClick={() => setShowConnect(true)}
-            className="self-start text-xs text-accent font-medium bg-transparent border-none cursor-pointer px-0 py-1 hover:underline"
-          >
-            + Connect an agent for this project
-          </button>
-        </>
-      )}
-    </section>
-  );
-}
 
 export function ProjectSettings() {
   const toast = useToast();
@@ -109,7 +44,9 @@ export function ProjectSettings() {
 
   const [defaultVmSize, setDefaultVmSize] = useState<VMSize | null>(project?.defaultVmSize ?? null);
   const [savingVmSize, setSavingVmSize] = useState(false);
-  const [defaultAgentType, setDefaultAgentType] = useState<string | null>(project?.defaultAgentType ?? null);
+  const [defaultAgentType, setDefaultAgentType] = useState<string | null>(
+    project?.defaultAgentType ?? null
+  );
   const [savingAgentType, setSavingAgentType] = useState(false);
 
   // Workspace idle timeout (node idle timeout is managed in ScalingSettings)
@@ -129,7 +66,9 @@ export function ProjectSettings() {
       setProjectName(project.name);
       setDefaultVmSize(project.defaultVmSize ?? null);
       setDefaultAgentType(project.defaultAgentType ?? null);
-      setWorkspaceIdleTimeoutMs(project.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS);
+      setWorkspaceIdleTimeoutMs(
+        project.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS
+      );
     }
   }, [project]);
 
@@ -170,7 +109,11 @@ export function ProjectSettings() {
     try {
       await updateProject(projectId, { defaultVmSize: newSize });
       await reload();
-      toast.success(newSize ? `Default VM size set to ${newSize}` : 'Default VM size cleared (will use platform default)');
+      toast.success(
+        newSize
+          ? `Default VM size set to ${newSize}`
+          : 'Default VM size cleared (will use platform default)'
+      );
     } catch (err) {
       // Revert on error
       setDefaultVmSize(project?.defaultVmSize ?? null);
@@ -187,7 +130,11 @@ export function ProjectSettings() {
     try {
       await updateProject(projectId, { defaultAgentType: newType });
       await reload();
-      toast.success(newType ? `Default agent set to ${AGENT_CATALOG.find(a => a.id === newType)?.name ?? newType}` : 'Default agent cleared (will use platform default)');
+      toast.success(
+        newType
+          ? `Default agent set to ${AGENT_CATALOG.find((a) => a.id === newType)?.name ?? newType}`
+          : 'Default agent cleared (will use platform default)'
+      );
     } catch (err) {
       setDefaultAgentType(project?.defaultAgentType ?? null);
       toast.error(err instanceof Error ? err.message : 'Failed to update agent type');
@@ -203,109 +150,12 @@ export function ProjectSettings() {
       await reload();
       toast.success('Workspace idle timeout saved');
     } catch (err) {
-      setWorkspaceIdleTimeoutMs(project?.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS);
+      setWorkspaceIdleTimeoutMs(
+        project?.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS
+      );
       toast.error(err instanceof Error ? err.message : 'Failed to update timeout');
     } finally {
       setSavingWorkspaceTimeout(false);
-    }
-  };
-
-  const [runtimeConfig, setRuntimeConfig] = useState<ProjectRuntimeConfigResponse>({ envVars: [], files: [] });
-  const [runtimeConfigLoading, setRuntimeConfigLoading] = useState(true);
-  const [savingRuntimeConfig, setSavingRuntimeConfig] = useState(false);
-
-  const [envKeyInput, setEnvKeyInput] = useState('');
-  const [envValueInput, setEnvValueInput] = useState('');
-  const [envSecretInput, setEnvSecretInput] = useState(false);
-  const [filePathInput, setFilePathInput] = useState('');
-  const [fileContentInput, setFileContentInput] = useState('');
-  const [fileSecretInput, setFileSecretInput] = useState(false);
-
-  const loadRuntimeConfig = useCallback(async () => {
-    try {
-      setRuntimeConfigLoading(true);
-      const config = await getProjectRuntimeConfig(projectId);
-      setRuntimeConfig(config);
-    } catch {
-      toast.error('Failed to load runtime config');
-    } finally {
-      setRuntimeConfigLoading(false);
-    }
-  }, [projectId, toast]);
-
-  useEffect(() => { void loadRuntimeConfig(); }, [loadRuntimeConfig]);
-
-  const handleUpsertEnvVar = async () => {
-    if (!envKeyInput.trim()) {
-      toast.error('Env key is required');
-      return;
-    }
-    try {
-      setSavingRuntimeConfig(true);
-      const response = await upsertProjectRuntimeEnvVar(projectId, {
-        key: envKeyInput.trim(),
-        value: envValueInput,
-        isSecret: envSecretInput,
-      });
-      setRuntimeConfig(response);
-      setEnvKeyInput('');
-      setEnvValueInput('');
-      setEnvSecretInput(false);
-      toast.success('Runtime env var saved');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save env var');
-    } finally {
-      setSavingRuntimeConfig(false);
-    }
-  };
-
-  const handleDeleteEnvVar = async (envKey: string) => {
-    try {
-      setSavingRuntimeConfig(true);
-      const response = await deleteProjectRuntimeEnvVar(projectId, envKey);
-      setRuntimeConfig(response);
-      toast.success(`Removed ${envKey}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove env var');
-    } finally {
-      setSavingRuntimeConfig(false);
-    }
-  };
-
-  const handleUpsertFile = async () => {
-    if (!filePathInput.trim()) {
-      toast.error('File path is required');
-      return;
-    }
-    try {
-      setSavingRuntimeConfig(true);
-      const response = await upsertProjectRuntimeFile(projectId, {
-        path: filePathInput.trim(),
-        content: fileContentInput,
-        isSecret: fileSecretInput,
-      });
-      setRuntimeConfig(response);
-      setFilePathInput('');
-      setFileContentInput('');
-      setFileSecretInput(false);
-      toast.success('Runtime file saved');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save runtime file');
-    } finally {
-      setSavingRuntimeConfig(false);
-    }
-  };
-
-  const handleDeleteFile = async (path: string) => {
-    try {
-      setSavingRuntimeConfig(true);
-      const response = await deleteProjectRuntimeFile(projectId, path);
-      setRuntimeConfig(response);
-      toast.success(`Removed ${path}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove runtime file');
-    } finally {
-      setSavingRuntimeConfig(false);
     }
   };
 
@@ -314,12 +164,8 @@ export function ProjectSettings() {
       {/* Project Name */}
       <section className="glass-surface rounded-lg p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-fg-primary">
-            Project Name
-          </h2>
-          <p className="m-0 mt-1 text-xs text-fg-muted">
-            The display name for this project.
-          </p>
+          <h2 className="sam-type-section-heading m-0 text-fg-primary">Project Name</h2>
+          <p className="m-0 mt-1 text-xs text-fg-muted">The display name for this project.</p>
         </div>
         <div className="flex gap-2 items-end">
           <input
@@ -327,7 +173,9 @@ export function ProjectSettings() {
             aria-label="Project name"
             value={projectName}
             onChange={(e) => setProjectName(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveName(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSaveName();
+            }}
             className="flex-1 py-1.5 px-2.5 min-h-9 border border-border-default rounded-sm bg-inset text-fg-primary text-[0.8125rem] font-[inherit] box-border"
           />
           <Button
@@ -344,12 +192,12 @@ export function ProjectSettings() {
       {/* Default VM Size */}
       <section className="glass-surface rounded-lg p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-fg-primary">
-            Default Node Size
-          </h2>
+          <h2 className="sam-type-section-heading m-0 text-fg-primary">Default Node Size</h2>
           <p className="m-0 mt-1 text-xs text-fg-muted">
             Used when launching new workspaces from this project. Click again to clear.
-            {catalogContext ? ` Catalog: ${catalogContext}.` : ' Exact specs depend on the selected provider.'}
+            {catalogContext
+              ? ` Catalog: ${catalogContext}.`
+              : ' Exact specs depend on the selected provider.'}
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -374,9 +222,7 @@ export function ProjectSettings() {
       {/* Default Agent Type */}
       <section className="glass-surface rounded-lg p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-fg-primary">
-            Default Agent Type
-          </h2>
+          <h2 className="sam-type-section-heading m-0 text-fg-primary">Default Agent Type</h2>
           <p className="m-0 mt-1 text-xs text-fg-muted">
             Which AI coding agent to use for tasks in this project. Click again to clear.
           </p>
@@ -398,9 +244,7 @@ export function ProjectSettings() {
                 } ${savingAgentType ? 'cursor-wait opacity-60' : 'cursor-pointer'}`}
               >
                 <div className="font-medium">{agent.name}</div>
-                <div className="text-xs text-fg-muted mt-0.5">
-                  {agent.description}
-                </div>
+                <div className="text-xs text-fg-muted mt-0.5">{agent.description}</div>
               </button>
             );
           })}
@@ -418,9 +262,7 @@ export function ProjectSettings() {
       {/* Per-agent model/permission overrides (advanced) */}
       <section className="glass-surface rounded-lg p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-fg-primary">
-            Agent Overrides
-          </h2>
+          <h2 className="sam-type-section-heading m-0 text-fg-primary">Agent Overrides</h2>
           <p className="m-0 mt-1 text-xs text-fg-muted">
             Per-agent model and permission-mode overrides for this project. Empty fields fall
             through to your user-level settings.
@@ -443,15 +285,16 @@ export function ProjectSettings() {
       {/* Workspace Idle Timeout */}
       <section className="glass-surface rounded-lg p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-fg-primary">
-            Workspace Idle Timeout
-          </h2>
+          <h2 className="sam-type-section-heading m-0 text-fg-primary">Workspace Idle Timeout</h2>
           <p className="m-0 mt-1 text-xs text-fg-muted">
-            How long workspaces stay active when idle. Workspaces with no messages or terminal activity beyond the timeout are automatically cleaned up.
+            How long workspaces stay active when idle. Workspaces with no messages or terminal
+            activity beyond the timeout are automatically cleaned up.
           </p>
         </div>
         <div>
-          <label htmlFor="workspace-idle-timeout" className="sr-only">Workspace idle timeout</label>
+          <label htmlFor="workspace-idle-timeout" className="sr-only">
+            Workspace idle timeout
+          </label>
           <div className="flex items-center gap-3">
             <input
               id="workspace-idle-timeout"
@@ -479,8 +322,8 @@ export function ProjectSettings() {
             </span>
           </div>
           <p className="m-0 mt-1 text-xs text-fg-muted">
-              Default: {DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS / (60 * 60 * 1000)}h. Range: 30m \u2013 24h.
-            </p>
+            Default: {DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS / (60 * 60 * 1000)}h. Range: 30m \u2013 24h.
+          </p>
         </div>
         <div className="flex justify-end">
           <Button
@@ -488,7 +331,8 @@ export function ProjectSettings() {
             loading={savingWorkspaceTimeout}
             disabled={
               savingWorkspaceTimeout ||
-              workspaceIdleTimeoutMs === (project?.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS)
+              workspaceIdleTimeoutMs ===
+                (project?.workspaceIdleTimeoutMs ?? DEFAULT_WORKSPACE_IDLE_TIMEOUT_MS)
             }
             onClick={() => void handleSaveWorkspaceTimeout()}
           >
@@ -498,195 +342,10 @@ export function ProjectSettings() {
       </section>
 
       {/* Scaling & Scheduling */}
-      {project && (
-        <ScalingSettings projectId={projectId} project={project} reload={reload} />
-      )}
+      {project && <ScalingSettings projectId={projectId} project={project} reload={reload} />}
 
       {/* Runtime Config */}
-      <section className="glass-surface rounded-lg p-4 grid gap-3">
-        <h2 className="sam-type-section-heading m-0 text-fg-primary">
-          Runtime Config
-        </h2>
-
-        {runtimeConfigLoading ? (
-          <div className="flex items-center gap-2">
-            <Spinner size="sm" />
-            <span>Loading runtime config...</span>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {/* Environment Variables */}
-            <div className="grid gap-2">
-              <h3 className="sam-type-card-title m-0 text-fg-primary">Environment Variables</h3>
-
-              {/* Add form — key and value on same row */}
-              <div className="flex gap-2 items-end flex-wrap">
-                <div className="flex-[1_1_140px] min-w-0">
-                  <label className="block text-xs text-fg-muted mb-0.5">Key</label>
-                  <input
-                    type="text"
-                    aria-label="Runtime env key"
-                    placeholder="API_TOKEN"
-                    value={envKeyInput}
-                    onChange={(event) => setEnvKeyInput(event.currentTarget.value)}
-                    className="block w-full py-1.5 px-2.5 min-h-9 border border-border-default rounded-sm bg-inset text-fg-primary text-[0.8125rem] font-[inherit] box-border"
-                  />
-                </div>
-                <div className="flex-[2_1_200px] min-w-0">
-                  <label className="block text-xs text-fg-muted mb-0.5">Value</label>
-                  <input
-                    type="text"
-                    aria-label="Runtime env value"
-                    placeholder="Value"
-                    value={envValueInput}
-                    onChange={(event) => setEnvValueInput(event.currentTarget.value)}
-                    className="block w-full py-1.5 px-2.5 min-h-9 border border-border-default rounded-sm bg-inset text-fg-primary text-[0.8125rem] font-[inherit] box-border"
-                  />
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <label className="flex items-center gap-1 text-xs text-fg-muted cursor-pointer whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={envSecretInput}
-                      onChange={(event) => setEnvSecretInput(event.currentTarget.checked)}
-                    />
-                    Secret
-                  </label>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleUpsertEnvVar}
-                    loading={savingRuntimeConfig}
-                    disabled={savingRuntimeConfig}
-                    style={{ minHeight: '36px' }}
-                  >
-                    Add
-                  </Button>
-                </div>
-              </div>
-
-              {/* Env var list */}
-              {runtimeConfig.envVars.length === 0 ? (
-                <div className="text-fg-muted text-xs py-1">
-                  No environment variables configured.
-                </div>
-              ) : (
-                <div className="border border-border-default rounded-sm overflow-hidden">
-                  {runtimeConfig.envVars.map((item, idx) => (
-                    <div
-                      key={item.key}
-                      className={`flex items-center gap-2 py-1.5 px-2 text-[0.8125rem] ${idx < runtimeConfig.envVars.length - 1 ? 'border-b border-border-default' : ''}`}
-                    >
-                      <code className="font-semibold text-fg-primary text-[0.8125rem]">{item.key}</code>
-                      <span className="text-fg-muted flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                        = {item.isSecret ? '\u2022\u2022\u2022\u2022\u2022\u2022' : item.value}
-                      </span>
-                      {item.isSecret && (
-                        <span className="text-[0.6875rem] text-fg-muted bg-inset px-1.5 py-px rounded-sm shrink-0">secret</span>
-                      )}
-                      <button
-                        onClick={() => void handleDeleteEnvVar(item.key)}
-                        disabled={savingRuntimeConfig}
-                        className="bg-transparent border-none cursor-pointer text-fg-muted p-1 rounded-sm inline-flex items-center justify-center shrink-0 transition-colors hover:text-danger"
-                        aria-label={`Remove ${item.key}`}
-                        title={`Remove ${item.key}`}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Runtime Files */}
-            <div className="grid gap-2">
-              <h3 className="sam-type-card-title m-0 text-fg-primary">Runtime Files</h3>
-
-              {/* Add form */}
-              <div className="grid gap-2">
-                <div>
-                  <label className="block text-xs text-fg-muted mb-0.5">File path</label>
-                  <input
-                    type="text"
-                    aria-label="Runtime file path"
-                    placeholder=".env.local"
-                    value={filePathInput}
-                    onChange={(event) => setFilePathInput(event.currentTarget.value)}
-                    className="block w-full py-1.5 px-2.5 min-h-9 border border-border-default rounded-sm bg-inset text-fg-primary text-[0.8125rem] font-[inherit] box-border"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-fg-muted mb-0.5">Content</label>
-                  <textarea
-                    aria-label="Runtime file content"
-                    placeholder="FOO=bar"
-                    rows={3}
-                    value={fileContentInput}
-                    onChange={(event) => setFileContentInput(event.currentTarget.value)}
-                    className="block w-full py-1.5 px-2.5 border border-border-default rounded-sm bg-inset text-fg-primary text-[0.8125rem] font-mono resize-y box-border"
-                  />
-                </div>
-                <div className="flex justify-between items-center gap-2 flex-wrap">
-                  <label className="flex items-center gap-1 text-xs text-fg-muted cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={fileSecretInput}
-                      onChange={(event) => setFileSecretInput(event.currentTarget.checked)}
-                    />
-                    Secret file content
-                  </label>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleUpsertFile}
-                    loading={savingRuntimeConfig}
-                    disabled={savingRuntimeConfig}
-                    style={{ minHeight: '36px' }}
-                  >
-                    Add file
-                  </Button>
-                </div>
-              </div>
-
-              {/* File list */}
-              {runtimeConfig.files.length === 0 ? (
-                <div className="text-fg-muted text-xs py-1">
-                  No runtime files configured.
-                </div>
-              ) : (
-                <div className="border border-border-default rounded-sm overflow-hidden">
-                  {runtimeConfig.files.map((item, idx) => (
-                    <div
-                      key={item.path}
-                      className={`flex items-center gap-2 py-1.5 px-2 text-[0.8125rem] ${idx < runtimeConfig.files.length - 1 ? 'border-b border-border-default' : ''}`}
-                    >
-                      <code className="font-semibold text-fg-primary text-[0.8125rem] overflow-hidden text-ellipsis whitespace-nowrap min-w-0">{item.path}</code>
-                      <span className="flex-1" />
-                      {item.isSecret && (
-                        <span className="text-[0.6875rem] text-fg-muted bg-inset px-1.5 py-px rounded-sm shrink-0">secret</span>
-                      )}
-                      <button
-                        onClick={() => void handleDeleteFile(item.path)}
-                        disabled={savingRuntimeConfig}
-                        className="bg-transparent border-none cursor-pointer text-fg-muted p-1 rounded-sm inline-flex items-center justify-center shrink-0 transition-colors hover:text-danger"
-                        aria-label={`Remove ${item.path}`}
-                        title={`Remove ${item.path}`}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
+      <ProjectRuntimeConfigSection projectId={projectId} />
 
       {/* Deploy to Cloud */}
       <DeploymentSettings projectId={projectId} />
@@ -694,20 +353,14 @@ export function ProjectSettings() {
       {/* Danger Zone */}
       <section className="bg-[color-mix(in_srgb,var(--sam-glass-nested-bg)_60%,transparent)] backdrop-blur-[12px] rounded-lg border border-danger p-4 grid gap-3">
         <div>
-          <h2 className="sam-type-section-heading m-0 text-danger">
-            Danger Zone
-          </h2>
+          <h2 className="sam-type-section-heading m-0 text-danger">Danger Zone</h2>
           <p className="m-0 mt-1 text-xs text-fg-muted">
             Permanently delete this project and all associated data. This action cannot be undone.
           </p>
         </div>
         {!showDeleteConfirm ? (
           <div>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => setShowDeleteConfirm(true)}
-            >
+            <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>
               Delete Project
             </Button>
           </div>
@@ -738,7 +391,10 @@ export function ProjectSettings() {
                 variant="secondary"
                 size="sm"
                 disabled={deleting}
-                onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteConfirmText('');
+                }}
               >
                 Cancel
               </Button>

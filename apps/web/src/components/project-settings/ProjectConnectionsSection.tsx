@@ -1,62 +1,70 @@
-/**
- * Connections settings page — replaces the former Agents tab.
- * Shows resolution status overview + guided Connect flow.
- */
 import type { CCConsumerResolutionStatus, CredentialKind } from '@simple-agent-manager/shared';
 import { useState } from 'react';
 
-import { ConnectFlow } from '../components/ConnectFlow';
-import { ConnectionsOverview } from '../components/ConnectionsOverview';
-import { useToast } from '../hooks/useToast';
-import { deleteAgentCredentialByKind } from '../lib/api';
+import { useToast } from '../../hooks/useToast';
+import { deleteProjectAgentCredential } from '../../lib/api';
+import { ConnectFlow } from '../ConnectFlow';
+import { ConnectionsOverview } from '../ConnectionsOverview';
 
-export function SettingsConnections() {
+interface ProjectConnectionsSectionProps {
+  projectId: string;
+  onUpdated: () => void;
+}
+
+export function ProjectConnectionsSection({ projectId, onUpdated }: ProjectConnectionsSectionProps) {
   const toast = useToast();
   const [showConnect, setShowConnect] = useState(false);
   const [connectAgentId, setConnectAgentId] = useState<string | undefined>();
   const [connectAuthMethod, setConnectAuthMethod] = useState<CredentialKind | undefined>();
-  const [connectMode, setConnectMode] = useState<'connect' | 'replace'>('connect');
+  const [connectMode, setConnectMode] = useState<'connect' | 'replace' | 'project-override'>(
+    'project-override'
+  );
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const handleConnect = (consumerId: string, consumerKind: 'agent' | 'compute') => {
-    if (consumerKind === 'agent') {
-      setConnectAgentId(consumerId);
-      setConnectAuthMethod(undefined);
-      setConnectMode('connect');
-      setShowConnect(true);
-    }
-    // Compute consumers deep-link to cloud provider settings (handled by ConnectionsOverview)
-  };
-
-  const handleConnected = () => {
+  const resetConnectFlow = () => {
     setShowConnect(false);
     setConnectAgentId(undefined);
     setConnectAuthMethod(undefined);
-    setConnectMode('connect');
-    setRefreshKey((k) => k + 1);
+    setConnectMode('project-override');
   };
 
-  const handleReplace = (consumer: CCConsumerResolutionStatus) => {
+  const handleConnect = (consumerId: string, consumerKind: 'agent' | 'compute') => {
+    if (consumerKind !== 'agent') return;
+
+    setConnectAgentId(consumerId);
+    setConnectAuthMethod(undefined);
+    setConnectMode('project-override');
+    setShowConnect(true);
+  };
+
+  const handleConnected = () => {
+    resetConnectFlow();
+    setRefreshKey((k) => k + 1);
+    onUpdated();
+  };
+
+  const openProjectOverride = (consumer: CCConsumerResolutionStatus) => {
     setConnectAgentId(consumer.consumerId);
     setConnectAuthMethod(toLegacyCredentialKind(consumer.credentialKind));
-    setConnectMode('replace');
+    setConnectMode(consumer.source === 'project-attachment' ? 'replace' : 'project-override');
     setShowConnect(true);
   };
 
   const handleDisconnect = async (consumer: CCConsumerResolutionStatus) => {
     const credentialKind = toLegacyCredentialKind(consumer.credentialKind);
     if (!credentialKind) {
-      toast.error('This connection does not expose a removable user credential.');
+      toast.error('This project override does not expose a removable credential.');
       return;
     }
-    if (!confirm(`Disconnect ${consumer.consumerName}?`)) return;
+    if (!confirm(`Remove the ${consumer.consumerName} project override?`)) return;
 
     try {
-      await deleteAgentCredentialByKind(consumer.consumerId, credentialKind);
-      toast.success(`${consumer.consumerName} disconnected`);
+      await deleteProjectAgentCredential(projectId, consumer.consumerId, credentialKind);
+      toast.success(`${consumer.consumerName} project override removed`);
       setRefreshKey((k) => k + 1);
+      onUpdated();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to disconnect credential');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove project override');
     }
   };
 
@@ -80,34 +88,33 @@ export function SettingsConnections() {
   };
 
   return (
-    <div className="glass-surface rounded-lg p-4 flex flex-col gap-4">
+    <section className="glass-surface rounded-lg p-4 grid gap-3">
       <div>
         <h2 className="sam-type-section-heading m-0 text-fg-primary">Connections</h2>
         <p className="m-0 mt-1 text-xs text-fg-muted">
-          How each AI agent and cloud provider resolves credentials for your account. Use row
-          actions to replace, disconnect, validate, or make an agent credential the default.
+          How each agent and cloud provider resolves credentials for this project. Badges show
+          whether a credential comes from a project override, your user default, or the SAM
+          platform.
         </p>
       </div>
 
       {showConnect ? (
         <ConnectFlow
+          projectId={projectId}
           initialAgentId={connectAgentId}
           initialAuthMethod={connectAuthMethod}
           mode={connectMode}
           onConnected={handleConnected}
-          onCancel={() => {
-            setShowConnect(false);
-            setConnectAgentId(undefined);
-            setConnectAuthMethod(undefined);
-            setConnectMode('connect');
-          }}
+          onCancel={resetConnectFlow}
         />
       ) : (
         <>
           <ConnectionsOverview
             key={refreshKey}
+            projectId={projectId}
             onConnect={handleConnect}
-            onReplace={handleReplace}
+            onReplace={openProjectOverride}
+            onProjectOverride={openProjectOverride}
             onDisconnect={(consumer) => void handleDisconnect(consumer)}
             onValidate={handleValidate}
           />
@@ -116,11 +123,11 @@ export function SettingsConnections() {
             onClick={() => setShowConnect(true)}
             className="self-start text-xs text-accent font-medium bg-transparent border-none cursor-pointer px-0 py-1 hover:underline"
           >
-            + Connect an agent
+            + Connect an agent for this project
           </button>
         </>
       )}
-    </div>
+    </section>
   );
 }
 

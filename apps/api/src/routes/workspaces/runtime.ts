@@ -32,6 +32,7 @@ import {
   MessageBatchSchema,
 } from '../../schemas';
 import { appendBootLog } from '../../services/boot-log';
+import { syncActiveAgentCredentialSecret } from '../../services/composable-credentials/agent-sync';
 import { decrypt, encrypt } from '../../services/encryption';
 import { getInstallationToken, getUserInstallationRepositories } from '../../services/github-app';
 import {
@@ -143,9 +144,7 @@ async function verifyWorkspaceGitHubOwnerAccess(input: {
       verifiedRepoId: verifiedRepo.id,
       action: 'rejected',
     });
-    throw errors.forbidden(
-      'GitHub repository access has changed; repository ID no longer matches'
-    );
+    throw errors.forbidden('GitHub repository access has changed; repository ID no longer matches');
   }
 
   return verifiedRepo.id;
@@ -690,6 +689,15 @@ runtimeRoutes.post(
       })
       .where(eq(schema.credentials.id, existing.id));
 
+    await syncActiveAgentCredentialSecret(c.env.DATABASE, {
+      userId: workspace.userId,
+      projectId: existing.projectId,
+      agentType,
+      credentialKind,
+      encryptedToken: ciphertext,
+      iv,
+    });
+
     log.info('agent_credential_sync.credential_updated', {
       workspaceId,
       agentType,
@@ -894,7 +902,7 @@ runtimeRoutes.post('/:id/git-token', async (c) => {
   // personal-installation leak fix is preserved.
   const repoShortName =
     repositoryName && repositoryName.includes('/')
-      ? repositoryName.split('/').pop() ?? null
+      ? (repositoryName.split('/').pop() ?? null)
       : repositoryName;
   if (!githubRepoId && !repoShortName) {
     throw errors.forbidden('GitHub repository is not verified for this workspace');
