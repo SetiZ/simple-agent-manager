@@ -119,13 +119,38 @@ async function recordChatSessionLoadFailure(
 }
 
 function getSessionMessageLimit(env: Env, requestedLimit?: string): number {
-  const configuredLimit = parseInt(env.CHAT_SESSION_MESSAGE_LIMIT || '', 10);
+  const configuredLimit = Number.parseInt(env.CHAT_SESSION_MESSAGE_LIMIT || '', 10);
   const maxLimit = Number.isFinite(configuredLimit) && configuredLimit > 0
     ? configuredLimit
     : DEFAULT_CHAT_SESSION_MESSAGE_LIMIT;
-  const parsedLimit = parseInt(requestedLimit || '', 10);
+  const parsedLimit = Number.parseInt(requestedLimit || '', 10);
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : maxLimit;
   return Math.min(limit, maxLimit);
+}
+
+function getBeforeCursor(rawBefore?: string): number | null {
+  if (!rawBefore) return null;
+  const before = Number.parseInt(rawBefore, 10);
+  if (!Number.isFinite(before)) {
+    throw errors.badRequest('before must be a valid timestamp');
+  }
+  return before;
+}
+
+function getRequestedRoles(rawRoles?: string): string[] | undefined {
+  const roles = rawRoles
+    ?.split(',')
+    .map((role) => role.trim())
+    .filter(Boolean);
+  return roles && roles.length > 0 ? roles : undefined;
+}
+
+function getCompactMode(rawCompact: string | undefined, defaultValue: boolean): boolean {
+  if (!rawCompact) return defaultValue;
+  const compact = rawCompact.trim().toLowerCase();
+  if (compact === 'true' || compact === '1') return true;
+  if (compact === 'false' || compact === '0') return false;
+  throw errors.badRequest('compact must be true or false');
 }
 
 /**
@@ -222,7 +247,7 @@ chatRoutes.get('/:sessionId', async (c) => {
 
   const limit = getSessionMessageLimit(c.env, c.req.query('limit'));
   const beforeParam = c.req.query('before');
-  const before = beforeParam ? parseInt(beforeParam, 10) : null;
+  const before = beforeParam ? Number.parseInt(beforeParam, 10) : null;
 
   const compactDefault = (c.env.CHAT_COMPACT_MODE_DEFAULT ?? '').toLowerCase();
   const compact = compactDefault === 'false' ? false : DEFAULT_CHAT_COMPACT_MODE;
@@ -342,6 +367,47 @@ chatRoutes.get('/:sessionId', async (c) => {
     hasMore: messagesResult.hasMore,
     state,
   });
+});
+
+/**
+ * GET /api/projects/:projectId/sessions/:sessionId/messages
+ * Get persisted messages for a session with optional role filtering.
+ *
+ * This supports secondary views like the timeline, which need server-backed
+ * user turns without forcing the main chat viewport to load every message.
+ */
+chatRoutes.get('/:sessionId/messages', async (c) => {
+  const userId = getUserId(c);
+  const projectId = requireRouteParam(c, 'projectId');
+  const sessionId = requireRouteParam(c, 'sessionId');
+  const db = drizzle(c.env.DATABASE, { schema });
+
+  await requireOwnedProject(db, projectId, userId);
+
+  const session = await projectDataService.getSession(c.env, projectId, sessionId);
+  if (!session) {
+    throw errors.notFound('Chat session');
+  }
+
+  const limit = getSessionMessageLimit(c.env, c.req.query('limit'));
+  const before = getBeforeCursor(c.req.query('before'));
+  const roles = getRequestedRoles(c.req.query('roles') ?? c.req.query('role'));
+
+  const compactDefault = (c.env.CHAT_COMPACT_MODE_DEFAULT ?? '').toLowerCase();
+  const defaultCompact = compactDefault === 'false' ? false : DEFAULT_CHAT_COMPACT_MODE;
+  const compact = getCompactMode(c.req.query('compact'), defaultCompact);
+
+  const messagesResult = await projectDataService.getMessages(
+    c.env,
+    projectId,
+    sessionId,
+    limit,
+    before,
+    roles,
+    compact
+  );
+
+  return c.json(messagesResult);
 });
 
 /**

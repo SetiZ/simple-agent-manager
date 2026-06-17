@@ -108,6 +108,11 @@ export interface ChatSessionDetailResponse {
   state?: SessionStateSnapshot | null;
 }
 
+export interface ChatMessagesListResponse {
+  messages: ChatMessageResponse[];
+  hasMore: boolean;
+}
+
 export async function listChatSessions(
   projectId: string,
   params: { status?: string; limit?: number; offset?: number } = {}
@@ -200,6 +205,25 @@ export async function getChatSession(
     : `/api/projects/${projectId}/sessions/${sessionId}`;
 
   return request<ChatSessionDetailResponse>(endpoint, params.signal ? { signal: params.signal } : {});
+}
+
+export async function listChatMessages(
+  projectId: string,
+  sessionId: string,
+  params: { limit?: number; before?: number; roles?: string[]; compact?: boolean; signal?: AbortSignal } = {}
+): Promise<ChatMessagesListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.limit !== undefined) searchParams.set('limit', String(params.limit));
+  if (params.before !== undefined) searchParams.set('before', String(params.before));
+  if (params.roles && params.roles.length > 0) searchParams.set('roles', params.roles.join(','));
+  if (params.compact !== undefined) searchParams.set('compact', String(params.compact));
+
+  const qs = searchParams.toString();
+  const endpoint = qs
+    ? `/api/projects/${projectId}/sessions/${sessionId}/messages?${qs}`
+    : `/api/projects/${projectId}/sessions/${sessionId}/messages`;
+
+  return request<ChatMessagesListResponse>(endpoint, params.signal ? { signal: params.signal } : {});
 }
 
 /**
