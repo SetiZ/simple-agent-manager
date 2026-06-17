@@ -171,12 +171,21 @@ export const ProjectMessageView: FC<ProjectMessageViewProps> = ({
 
   const lc = useSessionLifecycle(projectId, sessionId, isProvisioning, onSessionMutated);
 
-  // Build message-id → index map for jump-to-message from timeline
+  // Convert DO messages to conversation items (single source)
+  const conversationItems = useMemo<ConversationItem[]>(() => {
+    return chatMessagesToConversationItems(lc.messages);
+  }, [lc.messages]);
+
+  // Build message-id → rendered Virtuoso index map for jump-to-message from timeline
   const messageIndexMap = useMemo(() => {
     const map = new Map<string, number>();
-    (lc.messages ?? []).forEach((msg, i) => map.set(msg.id, i));
+    conversationItems.forEach((item, i) => {
+      if (item.kind === 'user_message') {
+        map.set(item.id, lc.firstItemIndex + i);
+      }
+    });
     return map;
-  }, [lc.messages]);
+  }, [conversationItems, lc.firstItemIndex]);
 
   const timeline = useSessionTimeline(projectId, sessionId, lc.messages, showTimeline, messageIndexMap);
 
@@ -200,11 +209,6 @@ export const ProjectMessageView: FC<ProjectMessageViewProps> = ({
     const { content } = await getMessageToolContent(projectId, sessionId, messageId);
     return (content as Array<{ type: string } & Record<string, unknown>>).map((c) => mapToolCallContent(c));
   }, [projectId, sessionId]);
-
-  // Convert DO messages to conversation items (single source)
-  const conversationItems = useMemo<ConversationItem[]>(() => {
-    return chatMessagesToConversationItems(lc.messages);
-  }, [lc.messages]);
 
   // Detect newly added optimistic user messages for fade animation
   useEffect(() => {

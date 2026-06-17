@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { ActivityEventResponse, ChatMessageResponse } from '../../lib/api/sessions';
-import { listActivityEvents } from '../../lib/api/sessions';
+import { listActivityEvents, listChatMessages } from '../../lib/api/sessions';
+import { mergeMessages } from '../../lib/merge-messages';
 import { buildSessionTimeline } from './buildSessionTimeline';
 import type { TimelineEntry } from './timeline-types';
 
@@ -19,18 +20,46 @@ export function useSessionTimeline(
   enabled: boolean,
   messageIndexMap: Map<string, number>
 ): UseSessionTimelineResult {
+  const [timelineMessages, setTimelineMessages] = useState<ChatMessageResponse[]>([]);
   const [activityEvents, setActivityEvents] = useState<ActivityEventResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [showContext, setShowContext] = useState(false);
 
-  const fetchEvents = useCallback(async () => {
+  const fetchTimeline = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await listActivityEvents(projectId, {
+      const messagePages: ChatMessageResponse[][] = [];
+      let before: number | undefined;
+      let hasMore = true;
+
+      while (hasMore) {
+        const result = await listChatMessages(projectId, sessionId, {
+          before,
+          roles: ['user'],
+          compact: true,
+        });
+
+        if (result.messages.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        messagePages.unshift(result.messages);
+        before = result.messages[0]?.createdAt;
+        hasMore = result.hasMore;
+      }
+
+      setTimelineMessages(messagePages.flat());
+    } catch {
+      // Silently handle — timeline is supplementary
+    }
+
+    try {
+      const eventsResult = await listActivityEvents(projectId, {
         sessionId,
         limit: 100,
       });
-      setActivityEvents(result.events);
+      setActivityEvents(eventsResult.events);
     } catch {
       // Silently handle — timeline is supplementary
     } finally {
@@ -38,15 +67,25 @@ export function useSessionTimeline(
     }
   }, [projectId, sessionId]);
 
-  // Fetch activity events when drawer opens
+  useEffect(() => {
+    setTimelineMessages([]);
+    setActivityEvents([]);
+  }, [projectId, sessionId]);
+
+  // Fetch server-backed timeline data when drawer opens
   useEffect(() => {
     if (!enabled) return;
-    void fetchEvents();
-  }, [enabled, fetchEvents]);
+    void fetchTimeline();
+  }, [enabled, fetchTimeline]);
+
+  const messagesForTimeline = useMemo(
+    () => mergeMessages(timelineMessages, (messages ?? []).filter((msg) => msg.role === 'user'), 'append'),
+    [timelineMessages, messages]
+  );
 
   const entries = useMemo(
-    () => buildSessionTimeline(messages ?? [], activityEvents, showContext, messageIndexMap),
-    [messages, activityEvents, showContext, messageIndexMap]
+    () => buildSessionTimeline(messagesForTimeline, activityEvents, showContext, messageIndexMap),
+    [messagesForTimeline, activityEvents, showContext, messageIndexMap]
   );
 
   return { entries, loading, showContext, setShowContext };

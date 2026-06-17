@@ -35,6 +35,16 @@ user-invocable: false
 - `PATCH /api/projects/:id` — Update project metadata (`name`, `description`, `defaultBranch`)
 - `DELETE /api/projects/:id` — Delete project (cascades project tasks/dependencies/events)
 
+## Chat Sessions (Project Scoped)
+
+- `GET /api/projects/:projectId/sessions` — List chat sessions for a project
+- `GET /api/projects/:projectId/sessions/:sessionId` — Get chat session detail with recent messages
+- `GET /api/projects/:projectId/sessions/:sessionId/messages` — List persisted session messages (supports `roles`, `before`, `limit`, `compact`)
+- `GET /api/projects/:projectId/sessions/:sessionId/messages/:messageId/tool-content` — Lazy-load stored tool content for compact messages
+- `POST /api/projects/:projectId/sessions/:sessionId/prompt` — Send a follow-up prompt to the active agent session
+- `POST /api/projects/:projectId/sessions/:sessionId/summarize` — Generate a session summary for conversation forking
+- `POST /api/projects/:projectId/sessions/:sessionId/stop` — Stop a chat session
+
 ## Task Management (Project Scoped)
 
 - `POST /api/projects/:projectId/tasks` — Create task

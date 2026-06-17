@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useSessionTimeline } from '../../../src/components/project-message-view/useSessionTimeline';
 import type { ActivityEventResponse, ChatMessageResponse } from '../../../src/lib/api/sessions';
@@ -10,12 +10,14 @@ vi.mock('../../../src/lib/api/sessions', async (importOriginal) => {
   return {
     ...original,
     listActivityEvents: vi.fn(),
+    listChatMessages: vi.fn(),
   };
 });
 
 // Import the mocked function for assertions
-import { listActivityEvents } from '../../../src/lib/api/sessions';
+import { listActivityEvents, listChatMessages } from '../../../src/lib/api/sessions';
 const mockListActivityEvents = vi.mocked(listActivityEvents);
+const mockListChatMessages = vi.mocked(listChatMessages);
 
 function makeMessage(id: string, createdAt: number): ChatMessageResponse {
   return {
@@ -43,17 +45,26 @@ function makeEvent(id: string, eventType: string, createdAt: number): ActivityEv
 }
 
 describe('useSessionTimeline', () => {
-  it('does not fetch events when disabled', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
     mockListActivityEvents.mockResolvedValue({ events: [], hasMore: false });
+    mockListChatMessages.mockResolvedValue({ messages: [], hasMore: false });
+  });
 
+  it('does not fetch events when disabled', () => {
     renderHook(() =>
       useSessionTimeline('proj-1', 'sess-1', [], false, new Map())
     );
 
     expect(mockListActivityEvents).not.toHaveBeenCalled();
+    expect(mockListChatMessages).not.toHaveBeenCalled();
   });
 
-  it('fetches events when enabled', async () => {
+  it('fetches server messages and events when enabled', async () => {
+    mockListChatMessages.mockResolvedValue({
+      messages: [makeMessage('m1', 1000)],
+      hasMore: false,
+    });
     mockListActivityEvents.mockResolvedValue({
       events: [makeEvent('e1', 'session.started', 1000)],
       hasMore: false,
@@ -66,6 +77,11 @@ describe('useSessionTimeline', () => {
     // Wait for the fetch to complete
     await act(async () => {
       await vi.waitFor(() => {
+        expect(mockListChatMessages).toHaveBeenCalledWith('proj-1', 'sess-1', {
+          before: undefined,
+          roles: ['user'],
+          compact: true,
+        });
         expect(mockListActivityEvents).toHaveBeenCalledWith('proj-1', {
           sessionId: 'sess-1',
           limit: 100,
@@ -76,18 +92,72 @@ describe('useSessionTimeline', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('uses server-fetched messages instead of only the loaded chat messages', async () => {
+    mockListChatMessages.mockResolvedValue({
+      messages: [makeMessage('server-old-user-turn', 500)],
+      hasMore: false,
+    });
+
+    const loadedMessages = [makeMessage('loaded-ui-message', 1000)];
+
+    const { result } = renderHook(() =>
+      useSessionTimeline('proj-1', 'sess-1', loadedMessages, true, new Map())
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mockListChatMessages).toHaveBeenCalled();
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.entries.some((entry) => entry.id === 'msg-server-old-user-turn')).toBe(true);
+  });
+
+  it('paginates server user messages until history is exhausted', async () => {
+    mockListChatMessages
+      .mockResolvedValueOnce({
+        messages: [makeMessage('newer', 2000)],
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        messages: [makeMessage('older', 1000)],
+        hasMore: false,
+      });
+
+    const { result } = renderHook(() =>
+      useSessionTimeline('proj-1', 'sess-1', [], true, new Map())
+    );
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mockListChatMessages).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    expect(mockListChatMessages).toHaveBeenNthCalledWith(2, 'proj-1', 'sess-1', {
+      before: 2000,
+      roles: ['user'],
+      compact: true,
+    });
+    expect(result.current.entries.map((entry) => entry.id)).toEqual(['msg-older', 'msg-newer']);
+  });
+
   it('returns entries combining messages and events when showContext is true', async () => {
     const resolvedEvents = [makeEvent('e1', 'workspace.created', 500)];
+    mockListChatMessages.mockResolvedValue({
+      messages: [makeMessage('m1', 1000)],
+      hasMore: false,
+    });
     mockListActivityEvents.mockResolvedValue({
       events: resolvedEvents,
       hasMore: false,
     });
 
-    const messages = [makeMessage('m1', 1000)];
     const indexMap = new Map([['m1', 0]]);
 
     const { result } = renderHook(() =>
-      useSessionTimeline('proj-1', 'sess-1', messages, true, indexMap)
+      useSessionTimeline('proj-1', 'sess-1', [], true, indexMap)
     );
 
     // Wait for fetch to settle

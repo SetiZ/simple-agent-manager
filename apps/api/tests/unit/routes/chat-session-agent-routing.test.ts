@@ -483,3 +483,104 @@ describe('chatRoutes agent session routing', () => {
     expect(task.agentProfileHint).toBe('Legacy Free Text Profile');
   });
 });
+
+describe('chatRoutes message list', () => {
+  let app: Hono<{ Bindings: Env }>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.userRole = 'user';
+
+    mocks.drizzle.mockReturnValue({
+      select: vi.fn().mockReturnValue(makeTaskQuery([])),
+    });
+
+    mocks.requireOwnedProject.mockResolvedValue({
+      id: 'proj-1',
+      userId: 'user-1',
+    });
+
+    mocks.getSession.mockResolvedValue({
+      id: 'chat-1',
+      workspaceId: 'ws-1',
+      taskId: null,
+      topic: 'Timeline source',
+      status: 'active',
+      messageCount: 2,
+      startedAt: 1,
+      endedAt: null,
+      createdAt: 1,
+    });
+
+    mocks.getMessages.mockResolvedValue({
+      messages: [
+        {
+          id: 'msg-user-1',
+          sessionId: 'chat-1',
+          role: 'user',
+          content: 'Initial prompt',
+          toolMetadata: null,
+          createdAt: 1000,
+          sequence: 1,
+        },
+      ],
+      hasMore: false,
+    });
+
+    app = new Hono<{ Bindings: Env }>();
+    app.onError((err, c) => {
+      const appError = err as { statusCode?: number; error?: string; message?: string };
+      if (typeof appError.statusCode === 'number' && typeof appError.error === 'string') {
+        return c.json({ error: appError.error, message: appError.message }, appError.statusCode);
+      }
+      return c.json({ error: 'INTERNAL_ERROR', message: err.message }, 500);
+    });
+    app.route('/api/projects/:projectId/sessions', chatRoutes);
+  });
+
+  it('returns role-filtered persisted messages for a session', async () => {
+    const response = await app.request(
+      '/api/projects/proj-1/sessions/chat-1/messages?roles=user&limit=20&before=2000&compact=true',
+      { method: 'GET' },
+      { DATABASE: {}, CHAT_SESSION_MESSAGE_LIMIT: '500' } as Env,
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0].id).toBe('msg-user-1');
+    expect(mocks.getMessages).toHaveBeenCalledWith(
+      expect.anything(),
+      'proj-1',
+      'chat-1',
+      20,
+      2000,
+      ['user'],
+      true,
+    );
+  });
+
+  it('returns 404 when the session does not exist', async () => {
+    mocks.getSession.mockResolvedValue(null);
+
+    const response = await app.request(
+      '/api/projects/proj-1/sessions/missing/messages?roles=user',
+      { method: 'GET' },
+      { DATABASE: {} } as Env,
+    );
+
+    expect(response.status).toBe(404);
+    expect(mocks.getMessages).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid before cursors', async () => {
+    const response = await app.request(
+      '/api/projects/proj-1/sessions/chat-1/messages?before=not-a-timestamp',
+      { method: 'GET' },
+      { DATABASE: {} } as Env,
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.getMessages).not.toHaveBeenCalled();
+  });
+});
