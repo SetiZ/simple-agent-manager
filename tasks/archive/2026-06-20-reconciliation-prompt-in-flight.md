@@ -1,6 +1,6 @@
 # Reconciliation Prompt-In-Flight Handling
 
-**Status:** backlog
+**Status:** archived
 **Priority:** high
 **Created:** 2026-06-20
 
@@ -21,14 +21,30 @@ The fix must distinguish an idle/ready agent from an agent that is still prompti
 
 ## Implementation Checklist
 
-- [ ] Add configurable prompt-in-flight reconciliation thresholds with shared defaults, Worker env typing, wrangler defaults, and `.env.example` documentation.
-- [ ] Extend reconciliation candidate selection to read `session_state.activity`, `activity_at`, and `prompt_started_at`.
-- [ ] Skip visible check-ins while a prompt is in flight below the hard threshold, and schedule the next reconciliation alarm at the relevant prompt threshold.
-- [ ] On hard prompt stall, call the VM cancel endpoint before any visible check-in is created, record a reconciliation activity event, and let a later reconciliation pass send the check-in once the agent is ready/idle.
-- [ ] Preserve existing check-in behavior for idle/ready task sessions.
-- [ ] Add regression tests proving busy agents are not sent check-ins prematurely and hard-stalled prompting agents receive a runtime cancel before a check-in marker is created.
-- [ ] Add/update configuration and environment validation coverage.
-- [ ] Run relevant lint, typecheck, and tests locally.
+- [x] Add configurable prompt-in-flight reconciliation thresholds with shared defaults, Worker env typing, wrangler defaults, and `.env.example` documentation.
+- [x] Extend reconciliation candidate selection to read `session_state.activity`, `activity_at`, and `prompt_started_at`.
+- [x] Skip visible check-ins while a prompt is in flight below the hard threshold, and schedule the next reconciliation alarm at the relevant prompt threshold.
+- [x] On hard prompt stall, call the VM cancel endpoint before any visible check-in is created, record a reconciliation activity event, and let a later reconciliation pass send the check-in once the agent is ready/idle.
+- [x] Preserve existing check-in behavior for idle/ready task sessions.
+- [x] Add regression tests proving busy agents are not sent check-ins prematurely and hard-stalled prompting agents receive a runtime cancel before a check-in marker is created.
+- [x] Add/update configuration and environment validation coverage.
+- [x] Run relevant lint, typecheck, and tests locally.
+
+## Validation Notes
+
+- `pnpm --filter @simple-agent-manager/api exec vitest run tests/unit/durable-objects/reconciliation.test.ts tests/unit/durable-objects/session-state-reconciliation.test.ts` passed.
+- `pnpm --filter @simple-agent-manager/api exec vitest run tests/integration/agent-lifecycle-orchestration.test.ts` passed.
+- `pnpm lint` passed with existing warnings only.
+- `pnpm typecheck` passed.
+- `pnpm test` passed.
+- `pnpm build` passed.
+- `pnpm --filter @simple-agent-manager/www build` passed after updating the public configuration reference.
+- After adding `TASK_RECONCILIATION_MIN_ALARM_DELAY_MS`, `pnpm --filter @simple-agent-manager/shared build` completed so focused API tests used the latest shared constant export.
+- Final focused reconciliation/session-state unit tests passed after the minimum alarm delay change.
+- Final `pnpm typecheck` passed.
+- Final `pnpm lint` passed with existing warnings only.
+- Final `pnpm test` passed.
+- Final `pnpm build` passed with existing build warnings only.
 
 ## Acceptance Criteria
 
