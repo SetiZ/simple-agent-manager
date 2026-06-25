@@ -32,7 +32,7 @@ This fails the quality bar for an agent harness that executes LLM-provided comma
 - [x] Add or adjust Bash WorkDir tests for empty and invalid WorkDir behavior.
 - [x] Add a narrow process-rule update requiring success-path child cleanup coverage for shell/process lifecycle bugs.
 - [x] Run `gofmt` and focused Go tests from `packages/harness`.
-- [ ] Run required specialist reviews: `$go-specialist`, `$security-auditor`, `$test-engineer`, and `$task-completion-validator`.
+- [x] Run required specialist reviews: `$go-specialist`, `$security-auditor`, `$test-engineer`, and `$task-completion-validator`.
 
 ## Acceptance Criteria
 
@@ -52,6 +52,43 @@ This fails the quality bar for an agent harness that executes LLM-provided comma
 - **Why it was not caught:** Tests exercised foreground command timeout and cancellation but not the invariant that a completed tool call must leave no child processes behind.
 - **Class of bug:** Runtime lifecycle boundary bug where success-path cleanup is missing for resources spawned outside Go's direct child process handle.
 - **Process fix:** Added a focused regression test for successful background-child cleanup and updated `.claude/rules/02-quality-gates.md` so future shell/process lifecycle bug fixes must cover the success path and prove children are not left alive after return.
+
+## Validation Evidence
+
+- `go test ./tools -count=1` passed in `packages/harness`.
+- `go test ./... -count=1` passed in `packages/harness`.
+- Regression proof: temporarily reversed only the `packages/harness/tools/bash.go` implementation change and ran `go test ./tools -run TestBash_CleansSuccessfulBackgroundChild -count=1`; it failed with `background child pid ... is still alive after Bash.Execute returned`.
+- `go test -race ./tools -count=1` passed in `packages/harness`.
+- `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` passed at the repo root. `pnpm lint` emitted existing warnings only.
+
+## Specialist Review Evidence
+
+### Task Completion Validator
+
+Verdict: PASS.
+
+| Check | Status | Issues |
+|-------|--------|--------|
+| A: Research -> Checklist | PASS | 0 uncovered findings |
+| B: Checklist -> Diff | PASS | 0 checked items without diff coverage |
+| C: Criteria -> Tests | PASS | 0 uncovered acceptance criteria |
+| D: UI -> Backend | N/A | No UI changes |
+| E: Multi-Resource | N/A | No multi-resource selection |
+| F: Vertical Slice | N/A | Single-package harness tool behavior |
+
+Findings: none.
+
+### Go Specialist
+
+Verdict: PASS. `Bash.Execute` now validates WorkDir before execution (`packages/harness/tools/bash.go:50`), creates a process group (`packages/harness/tools/bash.go:65`), uses `cmd.Cancel` for cancellation cleanup (`packages/harness/tools/bash.go:67`), and always performs post-run process-group cleanup (`packages/harness/tools/bash.go:77`). `killProcessGroup` targets only the negative process ID for this command's process group and treats already-exited groups as clean (`packages/harness/tools/bash.go:116`). No Go correctness or resource-leak findings.
+
+### Security Auditor
+
+Verdict: PASS. The change does not add credential handling, auth, networking, or new external trust boundaries. It improves boundary safety by rejecting empty/invalid WorkDir (`packages/harness/tools/bash.go:50`, `packages/harness/tools/builtin_test.go:208`) and limits cleanup to the process group created for the command (`packages/harness/tools/bash.go:65`, `packages/harness/tools/bash.go:120`). Existing Bash arbitrary-command risk remains explicitly documented in the tool comment and is unchanged.
+
+### Test Engineer
+
+Verdict: PASS. The regression test uses a deterministic PID-file pattern and cleanup hook (`packages/harness/tools/builtin_test.go:234`) and was verified to fail against the old implementation. Existing behavior coverage for simple output, timeout, cancellation, non-zero exit, working directory, and truncation remains in place (`packages/harness/tools/builtin_test.go:128`, `packages/harness/tools/builtin_test.go:142`, `packages/harness/tools/builtin_test.go:156`, `packages/harness/tools/builtin_test.go:178`, `packages/harness/tools/builtin_test.go:192`, `packages/harness/tools/builtin_test.go:407`). Empty and invalid WorkDir tests cover the new validation (`packages/harness/tools/builtin_test.go:208`, `packages/harness/tools/builtin_test.go:221`).
 
 ## References
 
