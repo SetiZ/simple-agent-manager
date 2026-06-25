@@ -143,6 +143,7 @@ func (s *Store) migrate() error {
 		migrateV5,
 		migrateV6,
 		migrateV7,
+		migrateV8,
 	}
 
 	for i := version; i < len(migrations); i++ {

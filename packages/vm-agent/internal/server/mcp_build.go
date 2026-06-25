@@ -15,14 +15,10 @@ import (
 	"time"
 
 	"github.com/workspace/vm-agent/internal/bootstrap"
+	"github.com/workspace/vm-agent/internal/config"
 	"github.com/workspace/vm-agent/internal/container"
 	"github.com/workspace/vm-agent/internal/publish"
 )
-
-// buildPublishTimeout bounds the whole host build + push + release flow. Image
-// builds and registry pushes are slow, so this is far longer than ordinary MCP
-// tool calls.
-const buildPublishTimeout = 20 * time.Minute
 
 // McpBuildAndPublishRequest is the body for the build-and-publish endpoint.
 type McpBuildAndPublishRequest struct {
@@ -103,7 +99,8 @@ func (s *Server) handleMcpBuildAndPublish(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), buildPublishTimeout)
+	publishTimeout := s.deployBuildPublishTimeout()
+	ctx, cancel := context.WithTimeout(r.Context(), publishTimeout)
 	defer cancel()
 	result, err := s.runPreparedBuildAndPublish(ctx, prepared, nil)
 	if err != nil {
@@ -155,7 +152,8 @@ func (s *Server) handleMcpBuildAndPublishJobStart(w http.ResponseWriter, r *http
 			return
 		}
 	}
-	jobCtx, cancel := context.WithTimeout(context.Background(), buildPublishTimeout)
+	publishTimeout := s.deployBuildPublishTimeout()
+	jobCtx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	s.publishJobs[jobID] = publishJobState{
 		ID:          jobID,
 		WorkspaceID: prepared.WorkspaceID,
@@ -165,8 +163,13 @@ func (s *Server) handleMcpBuildAndPublishJobStart(w http.ResponseWriter, r *http
 		StartedAt:   time.Now().UTC(),
 	}
 	s.publishJobsMu.Unlock()
+	s.persistVMJobStart(jobID, vmJobKindPublish, prepared.WorkspaceID, vmJobStatusStarting, "starting")
 
-	reporter := newPublishJobReporter(s.config.ControlPlaneURL, prepared.ProjectID, jobID, prepared.Token, s.controlPlaneHTTPClient(buildPublishTimeout), prepared.Log)
+	controlPlaneReporter := newPublishJobReporter(s.config.ControlPlaneURL, prepared.ProjectID, jobID, prepared.Token, s.controlPlaneHTTPClient(publishTimeout), prepared.Log)
+	reporter := publish.EventFunc(func(ctx context.Context, event publish.Event) {
+		s.persistPublishEvent(jobID, event)
+		controlPlaneReporter.Event(ctx, event)
+	})
 	go s.runAcceptedPublishJob(jobCtx, jobID, prepared, reporter)
 
 	writeJSON(w, http.StatusAccepted, McpBuildAndPublishJobStartResponse{
@@ -286,11 +289,13 @@ func (s *Server) runAcceptedPublishJob(ctx context.Context, jobID string, prepar
 	s.publishJobs[jobID] = state
 	s.publishJobsMu.Unlock()
 	if err != nil {
+		s.persistVMJobComplete(jobID, vmJobStatusFailed, "failed", err.Error(), nil)
 		prepared.Log.Error("async publish failed", "publishJobId", jobID, "error", err)
 		reporter.Event(context.Background(), publish.Event{Status: "failed", CurrentStep: "failed", Level: "error", EventType: "publish.job.failed", Message: "publish job failed", ErrorMessage: err.Error(), ErrorCode: "publish_failed", Terminal: true, Retryable: true})
 		return
 	}
 	prepared.Log.Info("async publish complete", "publishJobId", jobID, "releaseId", result.ReleaseID, "version", result.Version)
+	s.persistVMJobComplete(jobID, vmJobStatusSucceeded, "succeeded", "", result)
 	reporter.Event(context.Background(), publish.Event{Status: "succeeded", CurrentStep: "succeeded", EventType: "publish.job.succeeded", Message: "publish job succeeded", ReleaseID: result.ReleaseID, ReleaseVersion: result.Version, ReleaseStatus: result.Status, Terminal: true})
 }
 
@@ -314,7 +319,7 @@ func (s *Server) runPreparedBuildAndPublish(ctx context.Context, prepared *prepa
 		ControlPlane: publish.NewHTTPControlPlane(publish.HTTPControlPlaneOptions{
 			BaseURL: s.config.ControlPlaneURL,
 			Token:   prepared.Token,
-			Client:  s.controlPlaneHTTPClient(buildPublishTimeout),
+			Client:  s.controlPlaneHTTPClient(s.deployBuildPublishTimeout()),
 			Logger:  log,
 		}),
 		Docker: publish.NewHostDocker(),
@@ -491,4 +496,11 @@ func containerPathRelativeToWorkspaces(p string) (string, bool) {
 		return "", false
 	}
 	return rel, true
+}
+
+func (s *Server) deployBuildPublishTimeout() time.Duration {
+	if s != nil && s.config.DeployBuildPublishTimeout > 0 {
+		return s.config.DeployBuildPublishTimeout
+	}
+	return config.DefaultDeployBuildPublishTimeout
 }
