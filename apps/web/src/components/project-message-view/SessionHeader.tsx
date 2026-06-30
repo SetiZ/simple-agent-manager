@@ -1,18 +1,18 @@
 import type { DetectedPort, NodeResponse, TaskDetailResponse, VMSize, WorkspaceResponse } from '@simple-agent-manager/shared';
 import { VM_SIZE_LABELS } from '@simple-agent-manager/shared';
 import { Button, Dialog, Spinner } from '@simple-agent-manager/ui';
-import { AlertTriangle, Bot, Box, CheckCircle2, ChevronDown, ChevronUp, Clock, Cloud, Cpu, ExternalLink, FolderOpen, GitBranch, GitCompare, GitFork, Globe, Hash, MapPin, MessageSquare, RotateCcw, Server, Tag, Timer, User2 } from 'lucide-react';
-import { type CSSProperties, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { Bot, Box, CheckCircle2, ChevronDown, ChevronUp, Clock, Cloud, Cpu, ExternalLink, FolderOpen, GitBranch, GitCompare, GitFork, Globe, Hash, MapPin, MessageSquare, RotateCcw, Server, Tag, Timer, User2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import type { ChatSessionResponse } from '../../lib/api';
-import { deleteWorkspace, getPortAccessUrl, getProjectTask, updateProjectTaskStatus } from '../../lib/api';
+import { deleteWorkspace, getPortAccessUrl, getProjectTask, listChatMessages, updateProjectTaskStatus } from '../../lib/api';
 import { stripMarkdown } from '../../lib/text-utils';
 import { sanitizeUrl } from '../../lib/url-utils';
 import type { SessionSourceContext } from '../../pages/project-chat/lineageUtils';
 import { CopyableId } from './CopyableId';
 import { PublicPortsToggleRow } from './PublicPortsToggleRow';
+import { PortsContextItem, WorkspaceProfileBadge } from './SessionHeaderBadges';
 import { SessionSourceContextRow } from './SessionSourceContextRow';
 import type { SessionState } from './types';
 import { formatCountdown } from './types';
@@ -85,103 +85,6 @@ function formatTaskMode(mode: string): string {
   return mode === 'conversation' ? 'Conversation' : 'Task';
 }
 
-function getWorkspaceProfileLabel(workspace: WorkspaceResponse): string {
-  if (workspace.status === 'recovery') return 'Recovery container';
-  return workspace.workspaceProfile === 'lightweight' ? 'Lightweight' : 'Full';
-}
-
-const RECOVERY_CONTAINER_HELP = 'The devcontainer build failed, so SAM started a fallback recovery container to keep this chat usable. Open the workspace and check Boot Logs for the devcontainer error output.';
-
-function WorkspaceProfileBadge({ workspace }: Readonly<{ workspace: WorkspaceResponse }>) {
-  const [open, setOpen] = useState(false);
-  const [tooltipStyle, setTooltipStyle] = useState<CSSProperties>({});
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const tooltipId = useId();
-  const isRecovery = workspace.status === 'recovery';
-  const label = getWorkspaceProfileLabel(workspace);
-  const badgeClassName = 'inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0';
-
-  useLayoutEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const updatePosition = () => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      const tooltipWidth = Math.min(280, window.innerWidth - 32);
-      const left = Math.max(16, Math.min(rect.right - tooltipWidth, window.innerWidth - tooltipWidth - 16));
-      setTooltipStyle({
-        position: 'fixed',
-        left,
-        top: rect.bottom + 4,
-        width: tooltipWidth,
-        zIndex: 'var(--sam-z-dropdown)' as unknown as number,
-      });
-    };
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [open]);
-
-  if (!isRecovery) {
-    return (
-      <span
-        className={badgeClassName}
-        aria-label={`Workspace profile: ${label}`}
-        style={{
-          backgroundColor: workspace.workspaceProfile === 'lightweight' ? 'var(--sam-color-info-tint)' : 'var(--sam-color-success-tint)',
-          color: workspace.workspaceProfile === 'lightweight' ? 'var(--sam-color-info)' : 'var(--sam-color-success)',
-        }}
-      >
-        {label}
-      </span>
-    );
-  }
-
-  return (
-    <span className="relative inline-flex shrink-0">
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Recovery container: devcontainer build failed"
-        aria-describedby={open ? tooltipId : undefined}
-        onClick={() => setOpen(true)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        className={`${badgeClassName} border border-transparent cursor-help focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-primary`}
-        style={{
-          backgroundColor: 'var(--sam-color-warning-tint, rgba(245, 158, 11, 0.12))',
-          color: 'var(--sam-color-warning, #f59e0b)',
-          borderColor: 'color-mix(in srgb, var(--sam-color-warning, #f59e0b) 24%, transparent)',
-        }}
-      >
-        <AlertTriangle size={10} aria-hidden="true" />
-        {label}
-      </button>
-      {open && typeof document !== 'undefined' && createPortal(
-        <span
-          id={tooltipId}
-          role="tooltip"
-          className="rounded-sm glass-surface bg-[var(--sam-tooltip-bg)] px-3 py-2 text-left text-fg-primary shadow-tooltip whitespace-normal pointer-events-none"
-          style={{
-            fontSize: 'var(--sam-type-caption-size)',
-            lineHeight: 'var(--sam-type-caption-line-height)',
-            ...tooltipStyle,
-          }}
-        >
-          {RECOVERY_CONTAINER_HELP}
-        </span>,
-        document.body,
-      )}
-    </span>
-  );
-}
-
 /** Collapsible session header — shows title + state dot, with expandable details. */
 export function SessionHeader({
   projectId,
@@ -200,6 +103,7 @@ export function SessionHeader({
   onRetry,
   onFork,
   lineageText,
+  initialPromptFallback = null,
   sourceContext,
   hasContentBelow = false,
   onShowHierarchy,
@@ -221,6 +125,8 @@ export function SessionHeader({
   onFork?: () => void;
   /** Lineage subtitle for retries/forks (e.g., "↩ attempt 3"). */
   lineageText?: string;
+  /** First user prompt when the currently loaded page is known to contain it. */
+  initialPromptFallback?: string | null;
   /** Parent/source details for forked or retried sessions. */
   sourceContext?: SessionSourceContext;
   /** When true, suppress bottom rounding and glow (content follows below). */
@@ -232,6 +138,10 @@ export function SessionHeader({
   const [completing, setCompleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [initialPrompt, setInitialPrompt] = useState<string | null>(initialPromptFallback);
+  const [initialPromptLoading, setInitialPromptLoading] = useState(false);
+  const [initialPromptError, setInitialPromptError] = useState<string | null>(null);
+  const initialPromptFetchedRef = useRef<string | null>(null);
   const publicPorts = usePublicPortsToggle(workspace, onSessionMutated);
 
   // Trigger info — fetched on demand when expanding a task-linked session
@@ -245,6 +155,37 @@ export function SessionHeader({
       if (detail.trigger) setTriggerDetail(detail);
     }).catch(() => { /* best-effort */ });
   }, [expanded, session.taskId, projectId]);
+
+  useEffect(() => {
+    setInitialPrompt(initialPromptFallback);
+    setInitialPromptError(null);
+    setInitialPromptLoading(false);
+    initialPromptFetchedRef.current = null;
+  }, [session.id, initialPromptFallback]);
+
+  useEffect(() => {
+    if (!expanded || initialPrompt || initialPromptFetchedRef.current === session.id) return;
+    initialPromptFetchedRef.current = session.id;
+    setInitialPromptLoading(true);
+    setInitialPromptError(null);
+
+    void listChatMessages(projectId, session.id, {
+      limit: 1,
+      roles: ['user'],
+      compact: true,
+      order: 'asc',
+    })
+      .then((result) => {
+        const firstUserPrompt = result.messages[0]?.content.trim() || null;
+        setInitialPrompt(firstUserPrompt);
+      })
+      .catch(() => {
+        setInitialPromptError('Initial prompt unavailable');
+      })
+      .finally(() => {
+        setInitialPromptLoading(false);
+      });
+  }, [expanded, initialPrompt, projectId, session.id]);
 
   // Always show details — we always have at least reference IDs to display
   const hasDetails = true;
@@ -287,113 +228,132 @@ export function SessionHeader({
     return publicPorts.enabled ? sanitizeUrl(port.url) : getPortAccessUrl(workspace.id, port.port);
   }, [publicPorts.enabled, workspace]);
 
+  const sessionTitle = session.topic ? stripMarkdown(session.topic) : `Chat ${session.id.slice(0, 8)}`;
+  const sortedPorts = detectedPorts.slice().sort((a, b) => a.port - b.port);
+  const firstPort = sortedPorts[0];
+  const extraPortCount = Math.max(0, sortedPorts.length - 1);
+
   return (
     <div
       className={`relative glass-chrome border-t-0 shrink-0${hasContentBelow ? '' : ' rounded-b-2xl after:content-[\'\'] after:absolute after:bottom-0 after:left-[8%] after:right-[8%] after:h-[3px] after:bg-[radial-gradient(ellipse_at_center,rgba(34,197,94,0.55)_0%,transparent_70%)] after:blur-[2px] after:pointer-events-none after:z-10'}`}
       style={{ boxShadow: hasContentBelow ? '0 4px 24px rgba(0, 0, 0, 0.4)' : '0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(34, 197, 94, 0.08)' }}
     >
-      <div className="flex items-center gap-2 px-4 py-2 min-h-[44px]">
-        <span className="text-sm font-semibold text-fg-primary truncate flex-1 min-w-0">
-          {session.topic ? stripMarkdown(session.topic) : `Chat ${session.id.slice(0, 8)}`}
-        </span>
-
-        {lineageText && (
+      <div className="px-4 py-2 min-h-[54px] space-y-1.5">
+        <div className="flex items-start gap-2">
           <span
-            className="text-[10px] font-medium shrink-0"
-            style={{ color: 'var(--sam-color-fg-muted)' }}
-            title={lineageText}
+            className="text-sm font-semibold text-fg-primary flex-1 min-w-0 leading-snug"
+            title={sessionTitle}
+            style={{
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+              overflowWrap: 'anywhere',
+            }}
           >
-            {lineageText.startsWith('⑂') ? '⑂ fork' : lineageText}
+            {sessionTitle}
           </span>
-        )}
 
-        {workspace && <WorkspaceProfileBadge workspace={workspace} />}
-
-        {detectedPorts.length > 0 && (
-          <span className="inline-flex items-center gap-1 shrink-0">
-            {detectedPorts
-              .slice()
-              .sort((a, b) => a.port - b.port)
-              .slice(0, 3)
-              .map((p) => (
-                <a
-                  key={p.port}
-                  href={getWorkspacePortHref(p)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded no-underline shrink-0"
-                  style={{
-                    backgroundColor: 'var(--sam-color-accent-tint, rgba(59, 130, 246, 0.1))',
-                    color: 'var(--sam-color-accent-primary)',
-                  }}
-                  title={`${p.label} — ${p.url}`}
+          {(session.task?.id ?? session.taskId) && (
+            <span className="inline-flex items-center gap-0.5 shrink-0">
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  aria-label="Retry task"
+                  title="Retry — re-run this task"
+                  className="shrink-0 p-1.5 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary hover:bg-surface-hover transition-colors"
                 >
-                  <Globe size={10} />
-                  {p.port}
-                </a>
-              ))}
-            {detectedPorts.length > 3 && (
-              <span className="text-[10px] text-fg-muted">+{detectedPorts.length - 3}</span>
-            )}
-          </span>
-        )}
+                  <RotateCcw size={14} />
+                </button>
+              )}
+              {onFork && (
+                <button
+                  type="button"
+                  onClick={onFork}
+                  aria-label="Fork session"
+                  title="Fork — start a new task from this session"
+                  className="shrink-0 p-1.5 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary hover:bg-surface-hover transition-colors"
+                >
+                  <GitFork size={14} />
+                </button>
+              )}
+            </span>
+          )}
 
-        {(session.task?.id ?? session.taskId) && (
-          <span className="inline-flex items-center gap-0.5 shrink-0">
-            {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                aria-label="Retry task"
-                title="Retry — re-run this task"
-                className="shrink-0 p-1.5 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary hover:bg-surface-hover transition-colors"
-              >
-                <RotateCcw size={14} />
-              </button>
-            )}
-            {onFork && (
-              <button
-                type="button"
-                onClick={onFork}
-                aria-label="Fork session"
-                title="Fork — start a new task from this session"
-                className="shrink-0 p-1.5 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary hover:bg-surface-hover transition-colors"
-              >
-                <GitFork size={14} />
-              </button>
-            )}
-          </span>
-        )}
+          {hasDetails && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              aria-label={expanded ? 'Hide session details' : 'Show session details'}
+              className="shrink-0 p-1.5 -mt-0.5 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary hover:bg-surface-hover transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-primary"
+            >
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          )}
+        </div>
 
-        <span
-          className="inline-flex items-center gap-1 text-xs font-medium shrink-0"
-          style={{
-            color: sessionState === 'active' ? 'var(--sam-color-success)'
-              : sessionState === 'idle' ? 'var(--sam-color-warning, #f59e0b)'
-              : 'var(--sam-color-fg-muted)',
-          }}
-        >
-          <span className="w-[6px] h-[6px] rounded-full bg-current" />
-          {sessionState === 'active' ? 'Active' : sessionState === 'idle' ? 'Idle' : 'Stopped'}
-        </span>
-
-        {loading && (
-          <span role="status" aria-label="Refreshing messages" className="inline-flex items-center shrink-0">
-            <Spinner size="sm" />
-          </span>
-        )}
-
-        {hasDetails && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Hide session details' : 'Show session details'}
-            className="shrink-0 p-2 bg-transparent border-none cursor-pointer text-fg-muted rounded-sm hover:text-fg-primary transition-colors"
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+          <span
+            className="inline-flex items-center gap-1 text-xs font-medium shrink-0"
+            style={{
+              color: sessionState === 'active' ? 'var(--sam-color-success)'
+                : sessionState === 'idle' ? 'var(--sam-color-warning, #f59e0b)'
+                : 'var(--sam-color-fg-muted)',
+            }}
           >
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-        )}
+            <span className="w-[6px] h-[6px] rounded-full bg-current" />
+            {sessionState === 'active' ? 'Active' : sessionState === 'idle' ? 'Idle' : 'Stopped'}
+          </span>
+
+          {workspace && <WorkspaceProfileBadge workspace={workspace} />}
+
+          {firstPort && (
+            <a
+              href={getWorkspacePortHref(firstPort)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium px-1.5 py-0.5 rounded no-underline shrink-0"
+              style={{
+                backgroundColor: 'var(--sam-color-accent-tint, rgba(59, 130, 246, 0.1))',
+                color: 'var(--sam-color-accent-primary)',
+              }}
+              title={`${firstPort.label} — ${firstPort.url}`}
+            >
+              <Globe size={10} aria-hidden="true" />
+              {firstPort.port}
+            </a>
+          )}
+
+          {extraPortCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 bg-transparent border cursor-pointer whitespace-nowrap hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-primary"
+              style={{ color: 'var(--sam-color-fg-muted)', borderColor: 'var(--sam-color-border-default)' }}
+              aria-label={`Show ${extraPortCount} more forwarded ${extraPortCount === 1 ? 'port' : 'ports'}`}
+            >
+              +{extraPortCount} more
+            </button>
+          )}
+
+          {lineageText && (
+            <span
+              className="text-[10px] font-medium shrink-0"
+              style={{ color: 'var(--sam-color-fg-muted)' }}
+              title={lineageText}
+            >
+              {lineageText.startsWith('⑂') ? '⑂ fork' : lineageText}
+            </span>
+          )}
+
+          {loading && (
+            <span role="status" aria-label="Refreshing messages" className="inline-flex items-center shrink-0">
+              <Spinner size="sm" />
+            </span>
+          )}
+        </div>
       </div>
 
       {workspace && detectedPorts.length > 0 && (
@@ -407,6 +367,46 @@ export function SessionHeader({
 
       {expanded && hasDetails && (
         <div className="border-t border-[rgba(34,197,94,0.08)] px-4 py-2 space-y-2">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1 text-[10px] font-medium text-fg-muted uppercase tracking-wide">
+              <Tag size={10} />
+              Title
+            </div>
+            <div
+              className="text-sm font-semibold text-fg-primary"
+              style={{ overflowWrap: 'anywhere' }}
+            >
+              {sessionTitle}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1 text-[10px] font-medium text-fg-muted uppercase tracking-wide">
+              <MessageSquare size={10} />
+              Initial prompt
+            </div>
+            {initialPromptLoading ? (
+              <div role="status" className="inline-flex items-center gap-2 text-xs text-fg-muted">
+                <Spinner size="sm" />
+                Loading initial prompt...
+              </div>
+            ) : initialPrompt ? (
+              <div
+                className="text-xs leading-relaxed rounded p-2 max-h-32 overflow-y-auto whitespace-pre-wrap text-fg-primary"
+                style={{
+                  background: 'var(--sam-color-bg-inset, rgba(255,255,255,0.03))',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {initialPrompt}
+              </div>
+            ) : (
+              <div className="text-xs text-fg-muted">
+                {initialPromptError ?? 'No initial user prompt found.'}
+              </div>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <div className="flex items-center gap-1 text-[10px] font-medium text-fg-muted uppercase tracking-wide">
               <Hash size={10} />
@@ -703,56 +703,14 @@ export function SessionHeader({
                 </ContextItem>
               )}
               {detectedPorts.length > 0 && (
-                <ContextItem icon={<Globe size={12} />} label="Ports">
-                  <span className="inline-flex flex-wrap gap-1.5">
-                    {detectedPorts
-                      .slice()
-                      .sort((a, b) => a.port - b.port)
-                      .map((p) => (
-                        <a
-                          key={p.port}
-                          href={getWorkspacePortHref(p)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-mono text-[11px] no-underline hover:underline"
-                          style={{ color: 'var(--sam-color-accent-primary)' }}
-                          title={p.label}
-                        >
-                          {p.port}
-                          {p.address === '127.0.0.1' || p.address === '::1' ? ' (local)' : ''}
-                          <ExternalLink size={10} />
-                        </a>
-                      ))}
-                  </span>
-                </ContextItem>
+                <PortsContextItem ports={detectedPorts} getHref={getWorkspacePortHref} />
               )}
             </div>
           )}
           {/* Active ports section — shown when ports are detected and no infrastructure section is shown */}
           {detectedPorts.length > 0 && !(session.workspaceId && (workspace || node)) && (
             <div className="flex flex-col gap-1.5 pt-1 border-t border-border-default">
-              <ContextItem icon={<Globe size={12} />} label="Ports">
-                <span className="inline-flex flex-wrap gap-1.5">
-                  {detectedPorts
-                    .slice()
-                    .sort((a, b) => a.port - b.port)
-                    .map((p) => (
-                      <a
-                        key={p.port}
-                        href={getWorkspacePortHref(p)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-mono text-[11px] no-underline hover:underline"
-                        style={{ color: 'var(--sam-color-accent-primary)' }}
-                        title={p.label}
-                      >
-                        {p.port}
-                        {p.address === '127.0.0.1' || p.address === '::1' ? ' (local)' : ''}
-                        <ExternalLink size={10} />
-                      </a>
-                    ))}
-                </span>
-              </ContextItem>
+              <PortsContextItem ports={detectedPorts} getHref={getWorkspacePortHref} />
             </div>
           )}
           {/* Fallback when workspace data is still loading or failed */}
