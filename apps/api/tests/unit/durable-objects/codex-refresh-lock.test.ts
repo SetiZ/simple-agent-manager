@@ -1477,6 +1477,50 @@ describe('CodexRefreshLock', () => {
     expect(json.debug_info).toBeUndefined();
   });
 
+  it('parses OpenAI nested error form and surfaces refresh_token_invalidated (revoked token diagnostic)', async () => {
+    const { do: doInstance, env } = createDO();
+    setupCredentialFound(env);
+    mockLogWarn.mockClear();
+
+    // OpenAI returns the NESTED error shape (not flat OAuth2), which is what a
+    // revoked/logged-out token produces in production:
+    //   { error: { message, type, param, code } }
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({
+        error: {
+          message: 'Your session has ended. Please log in again.',
+          type: 'invalid_request_error',
+          param: null,
+          code: 'refresh_token_invalidated',
+        },
+      }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const res = await doInstance.fetch(
+      makeRequest({ refreshToken: 'stored-refresh', userId: 'user-1' }),
+    );
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    // The nested code is surfaced as the forwarded error.
+    expect(json.error).toBe('refresh_token_invalidated');
+    expect(json.error_description).toBe('Your session has ended. Please log in again.');
+
+    // Structured diagnostic captures the rejection reason — and NEVER the raw body.
+    const warnCall = mockLogWarn.mock.calls.find(
+      ([event]) => event === 'codex_refresh.upstream_rejected',
+    );
+    expect(warnCall).toBeDefined();
+    const fields = warnCall?.[1] as Record<string, unknown>;
+    expect(fields.upstreamErrorCode).toBe('refresh_token_invalidated');
+    expect(fields.upstreamErrorMessage).toBe('Your session has ended. Please log in again.');
+    expect(fields.status).toBe(401);
+    // No raw-body field is logged (refresh token can never leak).
+    expect(fields).not.toHaveProperty('rawBodySample');
+  });
+
   it('returns generic error for non-JSON upstream error responses', async () => {
     const { do: doInstance, env } = createDO();
     setupCredentialFound(env);
@@ -1529,5 +1573,83 @@ describe('CodexRefreshLock', () => {
     expect(url).toBe('https://custom-auth.example.com/token');
     const body = JSON.parse(opts?.body as string);
     expect(body.client_id).toBe('custom_client_id');
+  });
+
+  // -----------------------------------------------------------------------
+  // Concurrency serialization (theory A: one-time-use refresh token replay)
+  //
+  // A Durable Object does NOT serialize concurrent `async fetch()` handlers
+  // across `await` points. Two workspaces for the same user can issue
+  // overlapping refreshes. OpenAI rotates the one-time-use refresh_token on
+  // first use and revokes the whole token family if the consumed token is
+  // replayed. So the SECOND overlapping request MUST NOT POST the same token
+  // to OpenAI — it must observe the rotated stored credential and take the
+  // grace-window handoff path instead. Without the in-DO refreshLock mutex,
+  // both requests read the pre-rotation token and both hit OpenAI (2 fetches),
+  // replaying a consumed token. With the mutex, exactly ONE fetch occurs.
+  // -----------------------------------------------------------------------
+
+  it('serializes concurrent refreshes: consumed token is not replayed to OpenAI', async () => {
+    const { do: doInstance, env } = createDO();
+    setupCredentialFound(env);
+
+    // Model the stored credential rotating in the DB. `decrypt` returns the
+    // CURRENT stored auth.json; `encrypt` (the write step after a successful
+    // OpenAI refresh) advances the stored refresh_token to the rotated value —
+    // exactly what writing the new auth.json to D1 does in production.
+    let currentRefresh = 'stored-refresh';
+    vi.mocked(decrypt).mockImplementation(async () =>
+      JSON.stringify({
+        tokens: {
+          access_token: 'stored-access',
+          refresh_token: currentRefresh,
+          id_token: 'stored-id',
+        },
+      }),
+    );
+    vi.mocked(encrypt).mockImplementation(async () => {
+      currentRefresh = 'new-refresh';
+      return { ciphertext: 'new-encrypted', iv: 'new-iv' };
+    });
+
+    // OpenAI returns the rotated token set. If this is called more than once,
+    // the second call is a replay of a consumed token (the bug).
+    mockSuccessfulRefreshResponse({
+      access_token: 'new-access',
+      refresh_token: 'new-refresh',
+      id_token: 'new-id',
+    });
+
+    // Two overlapping refreshes for the same user, both presenting the
+    // pre-rotation token.
+    const [resA, resB] = await Promise.all([
+      doInstance.fetch(
+        makeRequest({ refreshToken: 'stored-refresh', userId: 'user-1' }),
+      ),
+      doInstance.fetch(
+        makeRequest({ refreshToken: 'stored-refresh', userId: 'user-1' }),
+      ),
+    ]);
+
+    // The consumed token must be presented to OpenAI exactly once.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const jsonA = await resA.json();
+    const jsonB = await resB.json();
+
+    // Both callers receive a usable rotated refresh_token (one from the real
+    // refresh, one via the grace-window handoff) — neither is forced to re-auth.
+    expect(jsonA.refresh_token).toBe('new-refresh');
+    expect(jsonB.refresh_token).toBe('new-refresh');
+
+    // The queued second request took the grace-window path rather than hitting
+    // OpenAI again.
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      'codex_refresh.grace_window_hit',
+      expect.objectContaining({ userId: 'user-1' }),
+    );
   });
 });
