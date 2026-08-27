@@ -439,7 +439,7 @@ unauthenticated `/api/config/*` endpoints are marked `public`. Endpoints returni
 
 | Variable                               | Default            | Description                                                                                                                      |
 | -------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_WARM_TIMEOUT_MS`                 | `1800000` (30 min) | Time a node stays warm after idea execution completes                                                                            |
+| `NODE_WARM_TIMEOUT_MS`                 | `1800000` (30 min) | Time a managed auto-provisioned node stays warm after its last active workspace leaves                                            |
 | `MAX_AUTO_NODE_LIFETIME_MS`            | `14400000` (4 hr)  | Max lifetime for an auto-provisioned node holding no active workspaces                                                           |
 | `NODE_WARM_GRACE_PERIOD_MS`            | `2100000` (35 min) | Cron sweep grace period (must be > warm timeout)                                                                                 |
 | `NODE_LIFECYCLE_ALARM_RETRY_MS`        | `60000` (1 min)    | Retry delay for DO alarm failures                                                                                                |
@@ -451,7 +451,8 @@ unauthenticated `/api/config/*` endpoints are marked `public`. Endpoints returni
 The cleanup sweep measures idleness from a node's last **workspace activity**
 (`COALESCE(MAX(workspaces.updated_at), nodes.created_at)`), never from
 `nodes.updated_at` — heartbeats rewrite `updated_at` on every beat, so it tracks
-liveness rather than idleness.
+liveness rather than idleness. The eligibility check is implemented by
+`claimNodeForCleanup()` in `apps/api/src/scheduled/node-cleanup/shared.ts`.
 
 Reaping only ever applies to nodes with `node_role = 'workspace'` and
 `node_class != 'user-owned'`. Deployment nodes host long-running user applications
@@ -460,7 +461,8 @@ timers; they are released when their last deployment environment is deleted.
 
 | Variable                                   | Default            | Description                                                                                                                                                                                                                                                         |
 | ------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ORPHAN_IDLE_TIMEOUT_MS`              | `2700000` (45 min) | Idle window before a running workspace node with no active workspaces is destroyed, and minimum pre-heartbeat grace before an unversioned, unclaimed workspace VM can be retired. Keep above `NODE_WARM_TIMEOUT_MS` so the warm path reclaims reusable nodes first. |
+| `NODE_WORKSPACE_IDLE_TIMEOUT_MS`           | `1800000` (30 min) | Last-workspace-activity window before an auto-provisioned `node_role = 'workspace'` node with no active workspaces can be destroyed. Uses `COALESCE(MAX(workspaces.updated_at), nodes.created_at)`, never heartbeat-updated `nodes.updated_at`.                   |
+| `NODE_ORPHAN_IDLE_TIMEOUT_MS`              | legacy alias       | Backward-compatible alias used only when `NODE_WORKSPACE_IDLE_TIMEOUT_MS` is unset.                                                                                                                                        |
 | `NODE_ABSOLUTE_MAX_LIFETIME_MS`            | `86400000` (24 hr) | Hard ceiling on auto-provisioned workspace node age. Applies even when a workspace row still reports `running`, provided no workspace has reported activity within the idle window — this is what stops a stuck workspace row from making a node immortal.          |
 | `NODE_CLEANUP_SWEEP_LIMIT`                 | `25`               | Max node candidates processed per cleanup phase per cron run.                                                                                                                                                                                                       |
 | `NODE_CLEANUP_FAILURE_BACKOFF_MS`          | `3600000` (1 hr)   | Expiring exclusion applied to failed cleanup candidates so a permanent provider error cannot monopolize the bounded page.                                                                                                                                           |

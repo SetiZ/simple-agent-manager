@@ -851,6 +851,8 @@ export const tasks = sqliteTable(
     claimedWarmNodeId: text('claimed_warm_node_id').references(() => nodes.id, {
       onDelete: 'set null',
     }),
+    /** Fixed timestamp for the warm-pool claim. Cleanup may honor this only for a bounded placement window. */
+    claimedWarmNodeAt: text('claimed_warm_node_at'),
     /** Source that created this task. 'user' = manual, 'cron'/'webhook'/'mcp' = automated. */
     triggeredBy: text('triggered_by').notNull().default('user'),
     /** Soft FK to triggers table (null for user-created tasks). No DB constraint — trigger may be deleted independently. */
@@ -928,6 +930,11 @@ export const tasks = sqliteTable(
       .on(table.claimedWarmNodeId)
       .where(
         sql`claimed_warm_node_id IS NOT NULL AND status NOT IN ('completed', 'failed', 'cancelled')`
+      ),
+    claimedWarmNodeAtIdx: index('idx_tasks_claimed_warm_node_at')
+      .on(table.claimedWarmNodeId, table.claimedWarmNodeAt)
+      .where(
+        sql`claimed_warm_node_id IS NOT NULL AND status IN ('queued', 'delegated', 'in_progress')`
       ),
     // Supports the `WHERE workspace_id = ? AND status IN (...)` lookups on the
     // mass-outage recovery hot path (persistRuntimeRecoveryFailed) and other
